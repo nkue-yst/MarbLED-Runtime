@@ -1,0 +1,15 @@
+[submodule "tll/thirdparty/TUIO11_CPP"]
+	path = tll/thirdparty/TUIO11_CPP
+	url = https://github.com/mkalten/TUIO11_CPP.git
+[submodule "tll/thirdparty/rpi-rgb-led-matrix"]
+	path = tll/thirdparty/rpi-rgb-led-matrix
+	url = https://github.com/hzeller/rpi-rgb-led-matrix.git
+[submodule "tll/thirdparty/oscpack"]
+	path = tll/thirdparty/oscpack
+	url = https://github.com/RossBencina/oscpack.git
+[submodule "tll/thirdparty/libzmq"]
+	path = tll/thirdparty/libzmq
+	url = https://github.com/zeromq/libzmq.git
+[submodule "tll/thirdparty/cppzmq"]
+	path = tll/thirdparty/cppzmq
+	url = https://github.com/zeromq/cppzmq.git
