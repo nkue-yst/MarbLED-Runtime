@@ -1,0 +1,15 @@
+[submodule "BaseApp/thirdparty/TUIO11_CPP"]
+	path = BaseApp/thirdparty/TUIO11_CPP
+	url = https://github.com/mkalten/TUIO11_CPP.git
+[submodule "BaseApp/thirdparty/rpi-rgb-led-matrix"]
+	path = BaseApp/thirdparty/rpi-rgb-led-matrix
+	url = https://github.com/hzeller/rpi-rgb-led-matrix.git
+[submodule "BaseApp/thirdparty/oscpack"]
+	path = BaseApp/thirdparty/oscpack
+	url = https://github.com/RossBencina/oscpack.git
+[submodule "BaseApp/thirdparty/libzmq"]
+	path = BaseApp/thirdparty/libzmq
+	url = https://github.com/zeromq/libzmq.git
+[submodule "BaseApp/thirdparty/cppzmq"]
+	path = BaseApp/thirdparty/cppzmq
+	url = https://github.com/zeromq/cppzmq.git
