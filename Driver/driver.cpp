@@ -8,6 +8,7 @@
 #include <termios.h>
 #include <future>
 #include <queue>
+#include <iostream>
 
 #include <libudev.h>
 
@@ -15,7 +16,6 @@
 #include "zmq.hpp"
 
 #define     BUFFER_MAX       10
-#define     INFO_PUB         10
 
 typedef std::vector<std::vector<uint16_t>> f_img;
 
@@ -38,28 +38,43 @@ const char *get_serial_num(const char *name){
 
 
 // BRD_INFO [Serial-Number] [Board-Version] [Chain] [Sensors] [Modes]
-zmq::message_t build_info_msg(board *brd){
-    zmq::message_t brd_info(128);
+void publish_info(zmq::context_t *ctx, board *brd, const char *bind_addr){
+    printf("launch publisher\n");
 
-    snprintf((char *)brd_info.data(), 128, "BRD_INFO %s %d %d %d %d",
-             brd->serial,
-             brd->version,
-             brd->chain,
-             brd->sensors,
-             brd->modes);
+    // prepare publisher
+    zmq::socket_t publisher(*ctx, zmq::socket_type::pub);
+    publisher.connect(bind_addr);
 
-    return brd_info;
+    printf("pub bind\n");
+
+
+    char brd_info[128] = {};
+    std::snprintf(brd_info, 128, "BRD_INFO %s %d %d %d %d",
+                  brd->serial,
+                  brd->version,
+                  brd->chain,
+                  brd->sensors,
+                  brd->modes);
+
+
+    while(!exit_flg){
+
+        publisher.send(zmq::buffer(brd_info), zmq::send_flags::none);
+        std::cout << brd_info << std::endl;
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
+    }
 }
 
 
 // BRD_DATA [Serial-Number] [Mode] [Sensor-Data...]
-void publish_data(board *brd, const char *bind_addr){
+void publish_data(zmq::context_t *ctx, board *brd, const char *bind_addr){
     printf("launch publisher\n");
 
 
     // prepare publisher
-    zmq::context_t ctx(1);
-    zmq::socket_t publisher(ctx, zmq::socket_type::pub);
+    zmq::socket_t publisher(*ctx, zmq::socket_type::pub);
     publisher.connect(bind_addr);
 
     printf("pub bind\n");
@@ -67,8 +82,6 @@ void publish_data(board *brd, const char *bind_addr){
 
     char head[128];                                  // for data header
     f_img frame;                                    // get from fifo buffer
-    uint32_t info_pub_tim = INFO_PUB;               // timing for publishing meta-data
-    zmq::message_t info = build_info_msg(brd);      // meta-data
 
 
     while(!exit_flg){
@@ -94,14 +107,6 @@ void publish_data(board *brd, const char *bind_addr){
 
         }
         printf("published\n");
-
-        // publish meta-data when info_pub_tim matched info_pub
-        info_pub_tim++;
-        if(info_pub_tim > INFO_PUB){
-            publisher.send(info, zmq::send_flags::none);
-            printf("pub info\n");
-            info_pub_tim = 0;
-        }
     }
 }
 
@@ -161,16 +166,19 @@ void get_board_info(serial *ser, board *brd){
     brd->sensors = info_pac.value & 0xff;
 }
 
-void launch(serial *ser, board *brd, const char *bind_addr){
+void launch(serial *ser, board *brd, const char *bind_addr, const char *info_addr){
+    zmq::context_t ctx(1);
 
-    std::future<void> pub_data_th = std::async(std::launch::async, publish_data, brd, bind_addr);
+    std::future<void> pub_info_th = std::async(std::launch::async, publish_info, &ctx, brd, info_addr);
+    std::future<void> pub_data_th = std::async(std::launch::async, publish_data, &ctx, brd, bind_addr);
     std::future<void> pico_th = std::async(std::launch::async, receive_data, ser, brd);
 
     pub_data_th.wait();
+    pub_info_th.wait();
     pico_th.wait();
 }
 
-void run(const char* port, const char* bind_addr, int modes){
+void run(const char* port, const char* bind_addr, const char* info_addr, int modes){
 
     // print options
     printf("TM SERIAL PORT : %s\n", port);
@@ -200,7 +208,7 @@ void run(const char* port, const char* bind_addr, int modes){
     printf("BOARD_CHAIN : %d\n", brd.chain);
     printf("SENSORS     : %d\n", brd.sensors);
 
-    launch(&ser, &brd, bind_addr);
+    launch(&ser, &brd, bind_addr, info_addr);
 
     ser.close();
 }
@@ -208,7 +216,7 @@ void run(const char* port, const char* bind_addr, int modes){
 int main(int argc, char* argv[]){
 
     int c;
-    const char* optstring = "t:p:b:";
+    const char* optstring = "t:p:b:i:";
 
     // enable error log from getopt
     opterr = 0;
@@ -219,6 +227,8 @@ int main(int argc, char* argv[]){
     char* ser_p = nullptr;
     // bind address
     char* bind_addr = nullptr;
+    // connect address for publishing meta-data
+    char* info_addr = nullptr;
 
     // get options
     while((c = getopt(argc, argv, optstring)) != -1){
@@ -226,8 +236,10 @@ int main(int argc, char* argv[]){
             s_modes = (int)strtol(optarg, nullptr,  10);
         }else if(c == 'p') {
             ser_p = optarg;
-        }else if(c == 'b'){
+        }else if(c == 'b') {
             bind_addr = optarg;
+        }else if(c == 'i') {
+            info_addr = optarg;
         }else{
             // parse error
             printf("unknown argument error\n");
@@ -246,7 +258,7 @@ int main(int argc, char* argv[]){
         return -2;
     }
 
-    run(ser_p, bind_addr, s_modes);
+    run(ser_p, bind_addr, info_addr, s_modes);
 
     return 0;
 }
