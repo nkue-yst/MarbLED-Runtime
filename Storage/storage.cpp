@@ -10,17 +10,36 @@
 
 #include <sqlite3.h>
 
-void exec_sql(const char *db_path, const char *sql){
+
+struct board{
+    const char *serial;
+    uint8_t version;
+    uint8_t chain;
+    uint8_t sensors;
+    uint8_t modes;
+};
+
+
+int exec_sql(const char *db_path, const char *sql){
     sqlite3 *db = nullptr;
+    char *err = nullptr;
+
     int ret = sqlite3_open(db_path, &db);
     if(ret != SQLITE_OK){
         std::cerr << "db open error" << std::endl;
-        return;
+        return -1;
     }
 
-
+    ret = sqlite3_exec(db, sql, nullptr, nullptr, &err);
+    if(ret != SQLITE_OK) {
+        std::cerr << "sql exec error" << std::endl;
+        sqlite3_close(db);
+        sqlite3_free(err);
+        return -2;
+    }
 
     sqlite3_close(db);
+    return 0;
 }
 
 
@@ -55,13 +74,11 @@ void run(const char *db, const char *addr){
 int main(int argc, char* argv[]){
 
     int c;
-    const char* optstring = "t:d:b:";
+    const char* optstring = "d:b:";
 
     // enable error log from getopt
     opterr = 0;
 
-    // sensing modes
-    int s_modes = 5;
     // serial port
     char* db_path = nullptr;
     // bind address
@@ -69,9 +86,7 @@ int main(int argc, char* argv[]){
 
     // get options
     while((c = getopt(argc, argv, optstring)) != -1){
-        if(c == 't'){
-            s_modes = (int)strtol(optarg, nullptr,  10);
-        }else if(c == 'd') {
+        if(c == 'd') {
             db_path = optarg;
         }else if(c == 'b'){
             bind_addr = optarg;
