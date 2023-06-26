@@ -9,8 +9,8 @@
 #include <opencv2/opencv.hpp>
 #include <future>
 #include <thread>
-#include "sens_map_tm3dis.h"
-#include "sens_map_tm2.h"
+
+#include "frame.h"
 
 #include "zmq.hpp"
 #include "zmq_addon.hpp"
@@ -31,7 +31,7 @@ typedef std::vector<std::vector<uint16_t>> f_img;
 std::queue<f_img> receive_buffer;
 
 
-void store_buffer(const f_img& frm){
+void store_buffer(const char *serial, int mode, const uint16_t *data){
     // block when fifo buffer is max
     while(receive_buffer.size() >= BUFFER_MAX){
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -49,8 +49,6 @@ void zmq_receive(const char *addr){
     //subscriber.set(zmq::sockopt::rcvtimeo, 500);
     std::vector<zmq::message_t> recv_msgs;
 
-    f_img tmp(brd->modes, std::vector<uint16_t>(brd->sensors));
-
     while(1){
         recv_msgs.clear();
 
@@ -65,6 +63,8 @@ void zmq_receive(const char *addr){
 
         int ret = sscanf(recv_msgs.at(0).data<char>(), "BRD_DATA %s %d ", brd_serial, &mode);
         if(ret == EOF) continue; //fail to decode
+
+        store_buffer(brd_serial, mode, recv_msgs.at(1).data<uint16_t>());
 
         auto tm = recv_msgs.at(1).data<uint16_t>();
         tmp[mode].assign(tm, tm + recv_msgs.at(1).size());
