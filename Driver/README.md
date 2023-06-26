@@ -15,4 +15,5 @@ works on linux only.
 |--------|------------------------------------|----------------|
 | -t     | number of operating modes of board | 5              |
 | -p     | device name                        | /dev/ttyACM0   |
-| -b     | bind address                       | 127.0.0.1:6001 |
+| -b     | sensor-data publish address        | 127.0.0.1:6001 |
+| -i     | meta-data publish address          | 127.0.0.1:7000 |         

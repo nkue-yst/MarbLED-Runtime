@@ -181,8 +181,9 @@ void launch(serial *ser, board *brd, const char *bind_addr, const char *info_add
 void run(const char* port, const char* bind_addr, const char* info_addr, int modes){
 
     // print options
-    printf("TM SERIAL PORT : %s\n", port);
-    printf("ZMQ BIND ADDR  : %s\n", bind_addr);
+    printf("TM SERIAL PORT      : %s\n", port);
+    printf("SENS CONNECT ADDR   : %s\n", bind_addr);
+    printf("META CONNECT ADDR   : %s\n", info_addr);
     printf("SENSING MODES  : %d\n", modes);
 
     // init vars
@@ -202,7 +203,6 @@ void run(const char* port, const char* bind_addr, const char* info_addr, int mod
     brd.modes = modes;
     brd.serial = get_serial_num(name);
 
-    printf("Received the board data\n");
     printf("SERIAL_NUM  : %s\n", brd.serial);
     printf("BOARD_VER   : %d\n", brd.version);
     printf("BOARD_CHAIN : %d\n", brd.chain);

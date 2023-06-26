@@ -15,7 +15,7 @@
 char* db_path = nullptr;
 
 struct board{
-    char *serial;
+    char serial[256];
     uint8_t version;
     uint8_t chain;
     uint8_t sensors;
@@ -118,7 +118,7 @@ int init_db(){
         bool c = is_table_exist(db, "board");
         if (!c) {
             const char *sql =
-                    "CREATE TABLE board(id INTEGER, serial TEXT, version INTEGER, chain INTEGER, type INTEGER);";
+                    "CREATE TABLE board(id INTEGER, parent INTEGER, sensors INTEGER, modes INTEGER);";
             ret = exec_sql(db, sql);
             if (ret != 0) return -1;
         }
@@ -168,10 +168,10 @@ int add_board(board *brd){
     {
         char sql[256];
         char* err;
-        snprintf(sql, 256, "SELECT count(*) FROM controller  WHERE serial=%s;", brd->serial);
+        snprintf(sql, 256, "SELECT count(*) FROM controller  WHERE serial=\"%s\";", brd->serial);
         int ret = sqlite3_exec(db, sql, callback_count, (void*)(&count), &err);
         if(ret != SQLITE_OK){
-            std::cerr << "sql error occur" << err << std::endl;
+            std::cerr << "sql error occur : " << err << std::endl;
             sqlite3_close(db);
             sqlite3_free(err);
             return -1;
@@ -180,9 +180,8 @@ int add_board(board *brd){
 
     if(count == 0){
         // if controller does not register
-
         char sql[256];
-        snprintf(sql, 256, "INSERT INTO controller VALUES(%s, %d, %d);", brd->serial, brd->version, 1);
+        snprintf(sql, 256, "INSERT INTO controller(serial, version, type) VALUES(\"%s\", %d, %d);", brd->serial, brd->version, 1);
         int ret = exec_sql(db, sql);
         if(ret != 0) return -1;
     }
@@ -198,6 +197,7 @@ void receive_meta(const char* addr){
     zmq::context_t ctx(1);
     zmq::socket_t subscriber(ctx, zmq::socket_type::sub);
     subscriber.bind(addr);
+    std::cout <<  "bind addr" << std::endl;
 
     subscriber.set(zmq::sockopt::subscribe, "BRD_INFO");
     std::vector<zmq::message_t> recv_msgs;
@@ -207,7 +207,6 @@ void receive_meta(const char* addr){
         recv_msgs.clear();
 
         board brd = {};
-        int mode;
 
         zmq::recv_multipart(subscriber, std::back_inserter(recv_msgs));
         if(recv_msgs.empty()) {
@@ -215,13 +214,21 @@ void receive_meta(const char* addr){
             continue;
         }
 
-        sscanf(recv_msgs.at(0).data<char>(),
-                "BRD_DATA %s %d ",
+        int ret = sscanf(recv_msgs.at(0).data<char>(),
+                "BRD_INFO %s %s %s %s %s",
                 brd.serial,
-                &brd.version);
+                &brd.version,
+                &brd.chain,
+                &brd.sensors,
+                &brd.modes);
 
-        //
-        //std::cout << brd_serial << " : [" << mode << "] [" << recv_msgs.at(1).data<uint16_t>()[30] << "] "<< std::endl;
+        if(ret == EOF) continue; // fail to decode
+
+        auto itr = std::find(serial_cache.begin(), serial_cache.end(),brd.serial);
+        if(itr == serial_cache.end()){
+            add_board(&brd);
+            serial_cache.emplace_back(brd.serial);
+        }
 
     }
 }
