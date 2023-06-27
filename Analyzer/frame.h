@@ -7,6 +7,9 @@
 
 #include <opencv2/opencv.hpp>
 
+#include "zmq.hpp"
+#include "zmq_addon.hpp"
+
 class frame {
 private:
     char *serial;
@@ -14,10 +17,13 @@ private:
     std::vector<std::vector<uint16_t >> buf;
 
     void pack_mat();
+    static void store_buffer(const char *serial, int mode, const uint16_t *data);
 
 public:
-    frame();
+    frame(const char* s);
     void gen_mat(cv::OutputArray dst);
+
+    static void zmq_receive(const char *addr);
 };
 
 
