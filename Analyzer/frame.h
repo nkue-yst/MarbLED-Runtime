@@ -10,20 +10,35 @@
 #include "zmq.hpp"
 #include "zmq_addon.hpp"
 
-class frame {
-private:
-    char *serial;
-    int modes;
-    std::vector<std::vector<uint16_t >> buf;
+typedef std::vector<uint16_t> s_data;
 
-    void pack_mat();
-    static void store_buffer(const char *serial, int mode, const uint16_t *data);
+struct board{
+    char serial[256];
+    uint8_t version;
+    uint8_t chain;
+    uint8_t num;
+    uint8_t sensors;
+    uint8_t modes;
+};
+
+
+class frame {
+
+private:
+    board brd_data{};
+    std::vector<s_data> buf;
+    cv::Mat f_buf;
+
+    cv::Point2i place;
+    cv::Size2i f_buf_size;
+
+    void pack_mat(const uint16_t *map);
 
 public:
-    frame(const char* s);
-    void gen_mat(cv::OutputArray dst);
+    explicit frame(board brd);
+    void get_mat(cv::OutputArray dst);
 
-    static void zmq_receive(const char *addr);
+    void update(uint8_t mode, const uint16_t *data);
 };
 
 

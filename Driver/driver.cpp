@@ -9,6 +9,7 @@
 #include <future>
 #include <queue>
 #include <iostream>
+#include <cmath>
 
 #include <libudev.h>
 
@@ -68,7 +69,7 @@ void publish_info(zmq::context_t *ctx, board *brd, const char *bind_addr){
 }
 
 
-// BRD_DATA [Serial-Number] [Mode] [Sensor-Data...]
+// BRD_DATA [Serial-Number] [chain] [chain-num] [Mode] [Sensor-Data...]
 void publish_data(zmq::context_t *ctx, board *brd, const char *bind_addr){
     printf("launch publisher\n");
 
@@ -100,7 +101,12 @@ void publish_data(zmq::context_t *ctx, board *brd, const char *bind_addr){
         // publish via zmq socket
         for(int i = 0; i < frame.size(); i++){
 
-            std::snprintf(head, 128, "BRD_DATA %s %d", brd->serial, i);
+            std::snprintf(head, 128, "BRD_DATA %s %d %d %d",
+                          brd->serial,
+                          brd->chain,
+                          (int)std::floor(i / brd->modes),
+                          i % brd->modes
+                          );
 
             publisher.send(zmq::buffer(head), zmq::send_flags::sndmore);
             publisher.send(zmq::buffer(frame.at(i)), zmq::send_flags::none);

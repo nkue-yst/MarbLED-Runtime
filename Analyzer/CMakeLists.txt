@@ -8,6 +8,6 @@ find_package(cppzmq REQUIRED)
 
 include_directories(${OpenCV_INCLUDE_DIRS} include)
 
-add_executable(analyzer analyzer.cpp frame.cpp)
+add_executable(analyzer analyzer.cpp frame.cpp mapper.cpp mapper.h)
 target_link_libraries(analyzer ${OpenCV_LIBRARIES} cppzmq)
 

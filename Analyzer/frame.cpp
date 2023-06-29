@@ -3,152 +3,64 @@
 //
 
 #include "frame.h"
+#include "resources/sens_map_tm2.h"
+#include "resources/sens_map_tm3dis.h"
 
-void frame::pack_mat(cv::InputOutputArray io, tm_packet *pac, int sensors, const uint16_t *map) {
-    int num = pac->s_num;
-    int mode = pac->mode;
 
-    if(num >= sensors)return;
+frame::frame(board brd) {
+    brd_data = brd;
+    buf = std::vector<s_data>(brd.modes, s_data(brd.sensors));
+}
 
-    cv::Mat mat = io.getMat();
-    int x = (map[num] >> 8) & 0xFF;
-    int y = map[num] & 0xFF;
-    x = x * 2;
-    y = y * 2;
+void frame::update(uint8_t mode, const uint16_t *data) {
+    int n = sizeof(&data) / sizeof(data[0]);
+    buf[mode] = s_data(data, data + n);
+}
 
-    switch(mode){
-        case 1:
-            mat.at<uint16_t>(y + 1, x) = pac->value;
-            break;
+void frame::pack_mat(const uint16_t *map) {
+    cv::Mat mat = cv::Mat::zeros(f_buf_size, CV_16UC1);
+
+    for(int i = 0; i < buf.size(); i++){
+        for(int j = 0; j < buf.at(i).size(); j++){
+            int x = (map[j] >> 8) & 0xFF;
+            int y = map[j] & 0xFF;
+            x = x * 2;
+            y = y * 2;
+
+            uint16_t val = buf.at(i).at(j);
+
+            switch(i){
+                case 1:
+                    mat.at<uint16_t>(y + 1, x) = val;
+                    break;
+                case 2:
+                    mat.at<uint16_t>(y + 1, x + 1) = val;
+                    break;
+                case 3:
+                    mat.at<uint16_t>(y, x) = val;
+                    break;
+                case 4:
+                    mat.at<uint16_t>(y, x + 1) = val;
+                    break;
+                default:
+                    break;
+            }
+        }
+    }
+
+    mat.copyTo(f_buf);
+}
+
+void frame::get_mat(cv::OutputArray dst) {
+    switch(brd_data.version){
         case 2:
-            mat.at<uint16_t>(y + 1, x + 1) = pac->value;
+            pack_mat(sens_map_tm2);
             break;
         case 3:
-            mat.at<uint16_t>(y, x) = pac->value;
-            break;
-        case 4:
-            mat.at<uint16_t>(y, x + 1) = pac->value;
+            pack_mat(sens_map_tm3dis);
             break;
         default:
             break;
     }
-    mat.copyTo(io);
-}
-
-void frame::gen_mat(cv::OutputArray dst) {
-    cv::Mat fb = cv::Mat::zeros(cv::Size(20, 20), CV_16UC1);
-    cv::Mat fb_l = cv::Mat::zeros(cv::Size(10, 10), CV_16UC1);
-    cv::Mat show, show_l;
-
-    std::vector<tm_packet> pacs = std::vector<tm_packet>();
-    bool ret;
-
-    uint16_t offset[121][5] = {};
-    uint16_t r_max[121][5] = {};
-    int calib_mode = 0;
-
-    for (;;) {
-        ret = ser.read(&pacs);
-        for(tm_packet pac : pacs){
-            if(calib_mode == 1)offset[pac.s_num][pac.mode] = pac.value;
-            if(calib_mode == 2)r_max[pac.s_num][pac.mode] = pac.value;
-
-            if(calib_mode != 3)continue;
-            if(offset[pac.s_num][pac.mode] < 100) continue;
-
-            if(offset[pac.s_num][pac.mode] < pac.value){
-                pac.value -= offset[pac.s_num][pac.mode];
-            }else{
-                pac.value = 0;
-            }
-
-            float val = (float)pac.value / (float)(r_max[pac.s_num][pac.mode] - offset[pac.s_num][pac.mode]);
-            if(val > 1.0f)val = 1.0;
-            if(val < 0.0f)val = 0.0;
-
-            pac.value = (uint16_t)(val * 65000);
-
-            if(ret)pack_fb_mr(fb, &pac, 60, sens_map_tm3dis);
-            if(ret && (pac.mode == 0))pack_fb(fb_l, &pac, 60, sens_map_tm3dis);
-        }
-
-        fb.convertTo(show, CV_8UC1, 256.0 /65536.0);
-        cv::resize(show, show, cv::Size(40, 40), 0, 0, cv::INTER_CUBIC);
-        cv::resize(show, show, cv::Size(256, 256), 0,0, cv::INTER_NEAREST);
-
-        //cv::Sobel(show, show, CV_8UC1, 1, 0, 1, 1, 0, cv::BORDER_DEFAULT);
-
-        //cv::resize(show, show, cv::Size(256, 256), 0,0, cv::INTER_NEAREST);
-        cv::imshow("prev", show);
-
-        fb_l.convertTo(show_l, CV_8UC1, 256.0 /65536.0);
-        cv::resize(show_l, show_l, cv::Size(20, 20), 0, 0, cv::INTER_CUBIC);
-        cv::resize(show_l, show_l, cv::Size(256, 256), 0,0, cv::INTER_NEAREST);
-        cv::imshow("prev_l", show_l);
-
-        int key = cv::waitKey(1);
-        if(key == 'q'){
-            cv::imwrite("save.png", show);
-            cv::imwrite("save_lr.png", show_l);
-            break;
-        }
-        switch (key) {
-            case 'l':
-                calib_mode = 1;
-                break;
-            case 'u':
-                calib_mode = 2;
-                break;
-            case 'x':
-                calib_mode = 3;
-                break;
-            default:
-                break;
-        }
-    }
-
-    ser.close();
-}
-
-void frame::store_buffer(const char *serial, int mode, const uint16_t *data){
-    // block when fifo buffer is max
-    while(receive_buffer.size() >= BUFFER_MAX){
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-    receive_buffer.push(frm);
-    printf("store\n");
-}
-
-void frame::zmq_receive(const char *addr){
-    zmq::context_t ctx(1);
-    zmq::socket_t subscriber(ctx, zmq::socket_type::sub);
-    subscriber.bind(addr);
-
-    subscriber.set(zmq::sockopt::subscribe, "BRD_DATA");
-    //subscriber.set(zmq::sockopt::rcvtimeo, 500);
-    std::vector<zmq::message_t> recv_msgs;
-
-    while(true){
-        recv_msgs.clear();
-
-        char brd_serial[256];
-        int mode;
-
-        zmq::recv_multipart(subscriber, std::back_inserter(recv_msgs));
-        if(recv_msgs.empty()) {
-            std::cout << "timeout" << std::endl;
-            continue;
-        }
-
-        int ret = sscanf(recv_msgs.at(0).data<char>(), "BRD_DATA %s %d ", brd_serial, &mode);
-        if(ret == EOF) continue; //fail to decode
-
-        store_buffer(brd_serial, mode, recv_msgs.at(1).data<uint16_t>());
-
-        auto tm = recv_msgs.at(1).data<uint16_t>();
-        tmp[mode].assign(tm, tm + recv_msgs.at(1).size());
-
-        if(mode == brd->modes - 1) store_buffer(tmp);
-
-    }
+    f_buf.copyTo(dst);
 }
