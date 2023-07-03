@@ -23,7 +23,7 @@ std::vector<board> get_connected_boards(const char *addr) {
 
     // build a message requesting a connected board
     char request[128] = {};
-    std::snprintf(request, 128, "REQ_BRD 1");
+    std::snprintf(request, 128, "REQ_STORAGE CONNECTED_BRDS");
 
     // send request
     req.send(zmq::buffer(request), zmq::send_flags::none);
