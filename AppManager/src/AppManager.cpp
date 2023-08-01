@@ -1,4 +1,4 @@
-#include "BaseApp.hpp"
+#include "AppManager.h"
 
 #include <algorithm>
 #include <chrono>
@@ -36,7 +36,7 @@ namespace tll
             #endif
     }
 
-    BaseApp::BaseApp()
+    AppManager::AppManager()
         : is_home_(true)
     {
         this->osc_receiver = new TUIO::UdpReceiver();
@@ -50,7 +50,7 @@ namespace tll
         tll::OscHandler::sendMessage("/tll/init", "192.168.0.100", 3333);
     }
 
-    BaseApp::~BaseApp()
+    AppManager::~AppManager()
     {
         tll::OscHandler::sendMessage("/tll/terminate", "192.168.0.100", 3333);
         this->tuio_client->disconnect();
@@ -58,7 +58,7 @@ namespace tll
         delete this->osc_receiver;
     }
 
-    void BaseApp::run()
+    void AppManager::run()
     {
         init(64, 32, "HUB75");
 
@@ -154,7 +154,7 @@ namespace tll
         quit();
     }
 
-    bool BaseApp::switchApp(std::string app_name)
+    bool AppManager::switchApp(std::string app_name)
     {
         bool is_found = false;
 
@@ -193,7 +193,7 @@ namespace tll
         return is_found;
     }
 
-    uint32_t BaseApp::loadApps()
+    uint32_t AppManager::loadApps()
     {
         uint32_t app_num = 0;
 
@@ -230,15 +230,15 @@ int main(int argc, char** argv)
         if (strcmp(argv[1], "--without-osc") == 0) with_osc = false;
     }
 
-    tll::BaseApp* base_app = new tll::BaseApp();
+    tll::AppManager* app_manager = new tll::AppManager();
 
     if (with_osc)
     {
-        std::thread thread_osc(tll::runOscReceiveThread, base_app);
+        std::thread thread_osc(tll::runOscReceiveThread, app_manager);
         thread_osc.detach();
     }
 
-    base_app->run();
+    app_manager->run();
 
-    delete base_app;
+    delete app_manager;
 }
