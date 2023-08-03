@@ -42,7 +42,7 @@ public:
     db(const char *dbp);
     int init();
     int add_board(board *brd);
-    int get_board(const char *serial, std::vector<board> *brds);
+    int get_controller(const char *serial, std::vector<board> *brds);
 
 };
 

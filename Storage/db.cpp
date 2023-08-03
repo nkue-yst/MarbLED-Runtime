@@ -51,7 +51,7 @@ int db::init(){
         bool c = is_table_exist("board");
         if (!c) {
             const char *sql =
-                    "CREATE TABLE board(id INTEGER UNIQUE PRIMARY KEY AUTOINCREMENT, parent INTEGER, sensors INTEGER, modes INTEGER);";
+                    "CREATE TABLE board(id INTEGER UNIQUE PRIMARY KEY AUTOINCREMENT, parent INTEGER, chain_num INTEGER, sensors INTEGER, modes INTEGER);";
             ret = exec_sql(sql);
             if (ret != 0) return -1;
         }
@@ -208,10 +208,11 @@ int db::add_board(board *brd){
 
 int db::callback_board(void* param, int col_cnt, char** row_txt, char** col_name){
     *(std::vector<board>*)param;
+    char *i = row_txt[0];
     return 0;
 }
 
-int db::get_board(const char *serial, std::vector<board> *brds) {
+int db::get_controller(const char *serial, std::vector<board> *brds) {
     {
         char sql[256];
         char* err;

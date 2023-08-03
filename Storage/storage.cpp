@@ -75,11 +75,13 @@ void req_thread(db *db_s, const char *addr){
 
         char command[256]{};
         int ret = sscanf(recv_msgs.at(0).data<char>(),
-                         "REQ_STORAGE %s",
+                         "STORAGE %s",
                          command);
         if(ret == EOF) continue; // fail to decode
 
-        if(strcmp(command, "CONNECTED_BRDS") == 0){
+        if(strcmp(command, "REQ_LAYOUT") == 0) {
+
+        }else if(strcmp(command, "STR_LAYOUT") == 0){
 
         }
 
