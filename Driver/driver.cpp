@@ -10,11 +10,13 @@
 #include <queue>
 #include <iostream>
 #include <cmath>
+#include <map>
 
 #include <libudev.h>
 
 #include "serial.h"
 #include "zmq.hpp"
+#include "zmq_addon.hpp"
 
 #define     BUFFER_MAX       10
 
@@ -31,46 +33,62 @@ struct board{
     uint8_t modes;
 };
 
+struct recv_container{
+    char serial[256];
+    uint16_t id;
+    uint16_t controller_id;
+    uint8_t version;
+    uint8_t chain_num;
+    uint8_t modes;
+    int32_t layout_x;
+    int32_t layout_y;
+};
+
 const char *get_serial_num(const char *name){
     udev* ud = udev_new();
     udev_device* udv = udev_device_new_from_subsystem_sysname(ud, "tty", name);
     return udev_device_get_property_value(udv, "ID_SERIAL");
 }
 
-
-// BRD_INFO [Serial-Number] [Board-Version] [Chain] [Sensors] [Modes]
-void publish_info(zmq::context_t *ctx, board *brd, const char *bind_addr){
-    printf("launch publisher\n");
+int get_board_ids(zmq::context_t *ctx, const char *conn_addr, board *brd, std::map<unsigned int, unsigned int> *ids){
+    printf("Getting ID from storage.\n");
 
     // prepare publisher
-    zmq::socket_t publisher(*ctx, zmq::socket_type::pub);
-    publisher.connect(bind_addr);
+    zmq::socket_t req(*ctx, zmq::socket_type::req);
+    req.connect(conn_addr);
 
-    printf("pub bind\n");
+    printf("connected.\n");
 
+    std::vector<zmq::message_t> recv_msgs;
+    char request[128];
 
-    char brd_info[128] = {};
-    std::snprintf(brd_info, 128, "BRD_INFO %s %d %d %d %d",
-                  brd->serial,
-                  brd->version,
-                  brd->chain,
-                  brd->sensors,
-                  brd->modes);
+    for(int i = 0; i < brd->chain; i++){
+        recv_msgs.clear();
 
+        snprintf(request, 128, "%s %d %d %d", brd->serial, i, brd->version, brd->modes);
 
-    while(!exit_flg){
+        req.send(zmq::buffer("STORAGE REQ_BRDIDS"), zmq::send_flags::sndmore);
+        req.send(zmq::buffer(request), zmq::send_flags::none);
 
-        publisher.send(zmq::buffer(brd_info), zmq::send_flags::none);
-        std::cout << brd_info << std::endl;
+        zmq::recv_multipart(req, std::back_inserter(recv_msgs));
+        if(recv_msgs.empty()) {
+            std::cout << "timeout" << std::endl;
+            continue;
+        }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+        recv_container rc = *recv_msgs.at(1).data<recv_container>();
+        ids->insert(std::make_pair(i, rc.id));
+
+        printf("CHAIN NUM[%d] = ID %d\n", i, rc.id);
 
     }
+
+    req.close();
 }
 
 
 // BRD_DATA [Serial-Number] [chain] [chain-num] [Mode] [Sensor-Data...]
-void publish_data(zmq::context_t *ctx, board *brd, const char *bind_addr){
+void publish_data(zmq::context_t *ctx, board *brd, const char *bind_addr, const std::map<unsigned int, unsigned int> *ids){
     printf("launch publisher\n");
 
 
@@ -101,10 +119,12 @@ void publish_data(zmq::context_t *ctx, board *brd, const char *bind_addr){
         // publish via zmq socket
         for(int i = 0; i < frame.size(); i++){
 
-            std::snprintf(head, 128, "BRD_DATA %s %d %d %d",
-                          brd->serial,
+            int chain_num = (int)std::floor(i / brd->modes);
+
+            std::snprintf(head, 128, "BRD_DATA %d %d %d %d",
+                          ids->at(chain_num),
                           brd->chain,
-                          (int)std::floor(i / brd->modes),
+                          chain_num,
                           i % brd->modes
                           );
 
@@ -172,15 +192,12 @@ void get_board_info(serial *ser, board *brd){
     brd->sensors = info_pac.value & 0xff;
 }
 
-void launch(serial *ser, board *brd, const char *bind_addr, const char *info_addr){
-    zmq::context_t ctx(1);
+void launch(zmq::context_t *ctx, serial *ser, board *brd, const char *bind_addr, const std::map<unsigned int, unsigned int> *ids){
 
-    std::future<void> pub_info_th = std::async(std::launch::async, publish_info, &ctx, brd, info_addr);
-    std::future<void> pub_data_th = std::async(std::launch::async, publish_data, &ctx, brd, bind_addr);
+    std::future<void> pub_data_th = std::async(std::launch::async, publish_data, ctx, brd, bind_addr, ids);
     std::future<void> pico_th = std::async(std::launch::async, receive_data, ser, brd);
 
     pub_data_th.wait();
-    pub_info_th.wait();
     pico_th.wait();
 }
 
@@ -214,7 +231,13 @@ void run(const char* port, const char* bind_addr, const char* info_addr, int mod
     printf("BOARD_CHAIN : %d\n", brd.chain);
     printf("SENSORS     : %d\n", brd.sensors);
 
-    launch(&ser, &brd, bind_addr, info_addr);
+    zmq::context_t ctx(1);
+
+    // get board ids
+    std::map<unsigned int, unsigned int> ids{};
+    get_board_ids(&ctx, info_addr, &brd, &ids);
+
+    launch(&ctx, &ser, &brd, bind_addr, &ids);
 
     ser.close();
 }
