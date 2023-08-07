@@ -14,10 +14,10 @@
 
 struct board{
     char serial[256];
+    uint16_t id;
+    uint16_t controller_id;
     uint8_t version;
-    uint8_t chain;
     uint8_t chain_num;
-    uint8_t sensors;
     uint8_t modes;
     int32_t layout_x;
     int32_t layout_y;
@@ -31,7 +31,6 @@ private:
 
     int exec_sql(const char* sql);
     int is_table_exist(const char* table);
-    int get_controller_id(const char *serial);
     int open();
     void close();
 
@@ -41,8 +40,17 @@ private:
 public:
     db(const char *dbp);
     int init();
+
+    int is_controller_exist(const char *serial);
+    int is_board_exist(unsigned int cid, unsigned int chain_num);
+
+    int add_controller(const char *serial, uint16_t sw_ver, uint16_t type);
     int add_board(board *brd);
-    int get_controller(const char *serial, std::vector<board> *brds);
+
+    unsigned int get_controller_id(const char *serial);
+    unsigned int get_board_id(unsigned int cid, unsigned int chain_num);
+
+    int get_board(unsigned int bid, board *brd);
 
 };
 

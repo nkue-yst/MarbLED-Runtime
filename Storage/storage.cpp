@@ -13,48 +13,43 @@
 
 #include "db.h"
 
-std::vector<std::string> serial_cache;
+void get_layout(unsigned int id, board *brd){
 
+}
 
-void receive_meta(db *db_s, const char* addr){
+void store_layout(unsigned int id, int x, int y){
 
-    zmq::context_t ctx(1);
-    zmq::socket_t subscriber(ctx, zmq::socket_type::sub);
-    subscriber.bind(addr);
-    std::cout <<  "bind addr" << std::endl;
+}
 
-    subscriber.set(zmq::sockopt::subscribe, "BRD_INFO");
-    std::vector<zmq::message_t> recv_msgs;
-
-
-    while(1){
-        recv_msgs.clear();
-
-        board brd = {};
-
-        zmq::recv_multipart(subscriber, std::back_inserter(recv_msgs));
-        if(recv_msgs.empty()) {
-            std::cout << "timeout" << std::endl;
-            continue;
-        }
-
-        int ret = sscanf(recv_msgs.at(0).data<char>(),
-                "BRD_INFO %s %d %d %d %d",
-                brd.serial,
-                &brd.version,
-                &brd.chain,
-                &brd.sensors,
-                &brd.modes);
-
-        if(ret == EOF) continue; // fail to decode
-
-        auto itr = std::find(serial_cache.begin(), serial_cache.end(),brd.serial);
-        if(itr == serial_cache.end()){
-            db_s->add_board(&brd);
-            serial_cache.emplace_back(brd.serial);
-        }
-
+unsigned int acq_board_id(db *db_s, board *brd){
+    int count = db_s->is_controller_exist(brd->serial);
+    if(count == 0){
+        db_s->add_controller(brd->serial, 0, 1);
     }
+    unsigned int cid = db_s->get_controller_id(brd->serial);
+
+    count = db_s->is_board_exist(cid, brd->chain_num);
+    if(count == 0){
+        db_s->add_board(brd);
+    }
+
+    return db_s->get_board_id(cid, brd->chain_num);
+
+}
+
+void reply(zmq::socket_t *soc, std::vector<board> brd){
+    soc->send(zmq::buffer("STORAGE REPLY"), zmq::send_flags::sndmore);
+    if(brd.size() == 1){
+        soc->send(zmq::buffer(&brd.at(0), sizeof(brd.at(0))), zmq::send_flags::none);
+        return;
+    }
+
+    zmq::send_flags flags = zmq::send_flags::sndmore;
+    for(int i = 0; i < brd.size(); i++){
+        if(i == brd.size() -1) flags = zmq::send_flags::none;
+        soc->send(zmq::buffer(&brd.at(i), sizeof(brd.at(i))), flags);
+    }
+
 }
 
 void req_thread(db *db_s, const char *addr){
@@ -64,6 +59,8 @@ void req_thread(db *db_s, const char *addr){
     std::cout <<  "bind addr" << std::endl;
 
     std::vector<zmq::message_t> recv_msgs;
+    std::vector<unsigned int> board_cache;
+
     while(1){
         recv_msgs.clear();
 
@@ -79,9 +76,26 @@ void req_thread(db *db_s, const char *addr){
                          command);
         if(ret == EOF) continue; // fail to decode
 
+        // exec commands
         if(strcmp(command, "REQ_LAYOUT") == 0) {
 
         }else if(strcmp(command, "STR_LAYOUT") == 0){
+
+        }else if(strcmp(command, "REQ_BRDIDS") == 0){
+
+            board brd{};
+            int ret = sscanf(recv_msgs.at(1).data<char>(),
+                             "%s %d %d %d",
+                             brd.serial,
+                             &brd.chain_num,
+                             &brd.version,
+                             &brd.modes);
+            if(ret == EOF) continue; // fail to decode
+
+            brd.id = acq_board_id(db_s, &brd);
+            board_cache.emplace_back(brd.id);
+
+            reply(&subscriber, std::vector<board>{brd});
 
         }
 
@@ -95,9 +109,7 @@ void run(const char *db_path, const char *addr, const char *req_addr){
     int ret = db_s.init();
     if(ret < 0)return;
 
-    std::future<void> recv_meta = std::async(std::launch::async, receive_meta, &db_s, addr);
     std::future<void> recv_req = std::async(std::launch::async, req_thread, &db_s, req_addr);
-    recv_meta.wait();
     recv_req.wait();
 }
 

@@ -51,18 +51,7 @@ int db::init(){
         bool c = is_table_exist("board");
         if (!c) {
             const char *sql =
-                    "CREATE TABLE board(id INTEGER UNIQUE PRIMARY KEY AUTOINCREMENT, parent INTEGER, chain_num INTEGER, sensors INTEGER, modes INTEGER);";
-            ret = exec_sql(sql);
-            if (ret != 0) return -1;
-        }
-    }
-
-    // create cal_data table
-    {
-        bool c = is_table_exist("cal_data");
-        if (!c) {
-            const char *sql =
-                    "CREATE TABLE cal_data(id INTEGER, serial TEXT, version INTEGER, chain INTEGER, type INTEGER);";
+                    "CREATE TABLE board(id INTEGER UNIQUE PRIMARY KEY AUTOINCREMENT, controller_id INTEGER, chain_num INTEGER, version INTEGER, modes INTEGER);";
             ret = exec_sql(sql);
             if (ret != 0) return -1;
         }
@@ -73,7 +62,7 @@ int db::init(){
         bool c = is_table_exist("layout");
         if (!c) {
             const char *sql =
-                    "CREATE TABLE layout(id INTEGER, serial TEXT, version INTEGER, chain INTEGER, type INTEGER);";
+                    "CREATE TABLE layout(id INTEGER UNIQUE PRIMARY KEY AUTOINCREMENT, board_id INTEGER, bx INTEGER, by INTEGER, group INTEGER);";
             ret = exec_sql(sql);
             if (ret != 0) return -1;
         }
@@ -142,7 +131,7 @@ int db::is_table_exist(const char* table){
     return count;
 }
 
-int db::get_controller_id(const char *serial){
+unsigned int db::get_controller_id(const char *serial){
     int id;
 
     char sql[256];
@@ -165,45 +154,27 @@ int db::get_controller_id(const char *serial){
  * @return result process
  */
 int db::add_board(board *brd){
-
     open();
-
-    int count;
-    // check exist controller record
-    {
-        char sql[256];
-        char* err;
-        snprintf(sql, 256, "SELECT count(*) FROM controller  WHERE serial=\"%s\";", brd->serial);
-        int ret = sqlite3_exec(db_s, sql, callback_count, (void*)(&count), &err);
-        if(ret != SQLITE_OK){
-            std::cerr << "sql error occur : " << err << std::endl;
-            close();
-            sqlite3_free(err);
-            return -1;
-        }
-    }
-
-    if(count == 0){
-        // if controller does not register
-        char sql[256];
-        snprintf(sql, 256, "INSERT INTO controller(serial, version, type) VALUES(\"%s\", %d, %d);", brd->serial, brd->version, 1);
-        int ret = exec_sql(sql);
-        if(ret != 0) return -1;
-    }
 
     int id = get_controller_id(brd->serial);
     if(id == -1)return -1;
 
-    for(int i = 0; i < brd->chain; i++){
+    {
         // if controller does not register
         char sql[256];
-        snprintf(sql, 256, "INSERT INTO board(parent, sensors, modes) VALUES(%d, %d, %d);", id, brd->sensors, brd->modes);
+        snprintf(sql,
+                 256,
+                 "INSERT INTO board(controller_id, chain_num, version, modes) VALUES(%d, %d, %d, %d);",
+                 id,
+                 brd->chain_num,
+                 brd->version,
+                 brd->modes);
         int ret = exec_sql(sql);
         if(ret != 0) return -1;
     }
 
     close();
-    return count;
+    return 0;
 }
 
 int db::callback_board(void* param, int col_cnt, char** row_txt, char** col_name){
@@ -212,18 +183,111 @@ int db::callback_board(void* param, int col_cnt, char** row_txt, char** col_name
     return 0;
 }
 
-int db::get_controller(const char *serial, std::vector<board> *brds) {
+int db::is_controller_exist(const char *serial) {
+    open();
+
+    int count;
+    // check exist controller record
     {
         char sql[256];
-        char* err;
-        snprintf(sql, 256, "SELECT * FROM controller  WHERE serial=\"%s\";", serial);
-        int ret = sqlite3_exec(db_s, sql, callback_count, (void*)(brds), &err);
-        if(ret != SQLITE_OK){
+        char *err;
+        snprintf(sql, 256, "SELECT count(*) FROM controller  WHERE serial=\"%s\";", serial);
+        int ret = sqlite3_exec(db_s, sql, callback_count, (void *) (&count), &err);
+        if (ret != SQLITE_OK) {
             std::cerr << "sql error occur : " << err << std::endl;
             close();
             sqlite3_free(err);
             return -1;
         }
     }
+
+    close();
+
+    return count;
+}
+
+int db::is_board_exist(unsigned int cid, unsigned int chain_num) {
+    open();
+
+    int count;
+    // check exist controller record
+    {
+        char sql[256];
+        char *err;
+        snprintf(sql, 256, "SELECT count(*) FROM board  WHERE controller_id=%d AND chain_num=%d;", cid, chain_num);
+        int ret = sqlite3_exec(db_s, sql, callback_count, (void *) (&count), &err);
+        if (ret != SQLITE_OK) {
+            std::cerr << "sql error occur : " << err << std::endl;
+            close();
+            sqlite3_free(err);
+            return -1;
+        }
+    }
+
+    close();
+
+    return count;
+
+}
+
+int db::add_controller(const char *serial, uint16_t sw_ver, uint16_t type){
+    open();
+
+    // if controller does not register
+    char sql[256];
+    snprintf(sql, 256, "INSERT INTO controller(serial, version, type) VALUES(\"%s\", %d, %d);", serial, sw_ver, 1);
+    int ret = exec_sql(sql);
+    if(ret != 0) return -1;
+
+    close();
+    return 0;
+}
+
+unsigned int db::get_board_id(unsigned int cid, unsigned int chain_num){
+    open();
+
+    int count;
+    // check exist controller record
+    {
+        char sql[256];
+        char *err;
+        snprintf(sql, 256, "SELECT count(*) FROM board  WHERE controller_id=%d AND chain_num=%d;", cid, chain_num);
+        int ret = sqlite3_exec(db_s, sql, callback_count, (void *) (&count), &err);
+        if (ret != SQLITE_OK) {
+            std::cerr << "sql error occur : " << err << std::endl;
+            close();
+            sqlite3_free(err);
+            return -1;
+        }
+    }
+
+    close();
+
+    return count;
+}
+
+
+int db::get_board(unsigned int bid, board *brd) {
+    open();
+
+    // check exist controller record
+    {
+        char sql[256];
+        char *err;
+        snprintf(sql,
+                 256,
+                 "SELECT id, controller_id, version, chain_num, modes, x, y FROM board  WHERE id=%d INNER JOIN layout ON board.id=layout.board_id;",
+                 bid);
+        int ret = sqlite3_exec(db_s, sql, callback_board, (void *) (&brd), &err);
+        if (ret != SQLITE_OK) {
+            std::cerr << "sql error occur : " << err << std::endl;
+            close();
+            sqlite3_free(err);
+            return -1;
+        }
+    }
+
+    close();
+
     return 0;
 }

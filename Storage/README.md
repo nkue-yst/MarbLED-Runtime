@@ -1,16 +1,58 @@
 # MarbLED Storage
 
+## API
+
+### Request Board-Ids  
+  
+Request (multipart message)
+```
+STORAGE REQ_BRDIDS
+[SERIAL] [CHAIN_NUM] [BOARD_VER] [MODES]
+```
+Reply
+```
+STORAGE REPLY
+[BOARD_ID]
+```
+
+
+### Request Layouts
+  
+Request
+```
+STORAGE REQ_LAYOUT
+```
+Reply (multipart message)
+```
+STORAGE REPLY [CANBAS AREA x] [CANBAS AREA y]
+[BOARD ID] [BOARD VER] [MATRIX RESOLUTION x] [MATRIX RESOLUTION y] [x] [y] [IS_ENABLE]
+...
+```  
+  
+### Store Layouts  
+  
+Request (multipart message)
+```
+STORAGE STR_LAYOUT
+[BOARD ID] [x] [y] [IS_ENABLE]
+...
+```
+Reply
+```
+STORAGE REPLY [EXEC_CODE]
+```
+
+
 ## Table Definition
 
 ### Tables  
 
-| no | name         | description      |
-|----|--------------|------------------|
-| 1  | controller   | controller       |
-| 2  | board        | board            |
-| 3  | layout       | layout           |
-| 4  | cal_data     | calibration data |
-| 5  | board_master | known board data |
+| no  | name         | description      |
+|-----|--------------|------------------|
+| 1   | controller   | controller       |
+| 2   | board        | board            |
+| 3   | layout       | layout           |
+| 4   | board_master | known board data |
   
 ### Controller  
 
@@ -27,7 +69,8 @@
 |---------|---------------|----------------------------|
 | integer | id            | board id ( not serial no.) |
 | integer | controller_id | connected controller id    |
-| integer | board_ver     | sensing board version      |
+| integer | chain_num     | chain_num                  |
+| integer | version       | sensing board version      |
 | integer | modes         | sensing modes              |
 
 ### Layout
@@ -39,14 +82,6 @@
 | integer | bx       | board x pos  |
 | integer | by       | board y pos  |
 | integer | group    | layout group |
-
-### Calibrated Data
-
-| type    | name      | description   |
-|---------|-----------|---------------|
-| integer | id        | cal_data id   |
-| integer | board_id  | board id      |
-| text    | data_path | cal_data path |
 
 ### Board Master
 
