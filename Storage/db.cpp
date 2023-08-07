@@ -62,7 +62,7 @@ int db::init(){
         bool c = is_table_exist("layout");
         if (!c) {
             const char *sql =
-                    "CREATE TABLE layout(id INTEGER UNIQUE PRIMARY KEY AUTOINCREMENT, board_id INTEGER, bx INTEGER, by INTEGER, group INTEGER);";
+                    "CREATE TABLE layout(id INTEGER UNIQUE PRIMARY KEY AUTOINCREMENT, board_id INTEGER, bx INTEGER, by INTEGER, layout_group INTEGER);";
             ret = exec_sql(sql);
             if (ret != 0) return -1;
         }
@@ -178,8 +178,18 @@ int db::add_board(board *brd){
 }
 
 int db::callback_board(void* param, int col_cnt, char** row_txt, char** col_name){
-    *(std::vector<board>*)param;
-    char *i = row_txt[0];
+    board brd{
+        "",
+        static_cast<uint16_t>(atoi(row_txt[0])),
+        static_cast<uint16_t>(atoi(row_txt[1])),
+        static_cast<uint8_t>(atoi(row_txt[2])),
+        static_cast<uint8_t>(atoi(row_txt[3])),
+        static_cast<uint8_t>(atoi(row_txt[4])),
+        atoi(row_txt[5]),
+        atoi(row_txt[6])
+    };
+    *(board*)param = brd;
+
     return 0;
 }
 
@@ -289,5 +299,18 @@ int db::get_board(unsigned int bid, board *brd) {
 
     close();
 
+    return 0;
+}
+
+int db::update_layout(unsigned int bid, int x, int y) {
+    open();
+
+    // if controller does not register
+    char sql[256];
+    snprintf(sql, 256, "UPDATE layout SET bx=%d, by=%d WHERE board_id=%d", x, y, bid);
+    int ret = exec_sql(sql);
+    if(ret != 0) return -1;
+
+    close();
     return 0;
 }

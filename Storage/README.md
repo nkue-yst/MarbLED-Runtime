@@ -75,13 +75,13 @@ STORAGE REPLY [EXEC_CODE]
 
 ### Layout
   
-| type    | name     | description  |
-|---------|----------|--------------|
-| integer | id       | layout id    |
-| integer | board_id | board id     |
-| integer | bx       | board x pos  |
-| integer | by       | board y pos  |
-| integer | group    | layout group |
+| type    | name         | description  |
+|---------|--------------|--------------|
+| integer | id           | layout id    |
+| integer | board_id     | board id     |
+| integer | bx           | board x pos  |
+| integer | by           | board y pos  |
+| integer | layout_group | layout group |
 
 ### Board Master
 

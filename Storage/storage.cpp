@@ -13,12 +13,12 @@
 
 #include "db.h"
 
-void get_layout(unsigned int id, board *brd){
-
+void get_layout(db *db_s, unsigned int id, board *brd){
+    db_s->get_board(id, brd);
 }
 
-void store_layout(unsigned int id, int x, int y){
-
+void store_layout(db *db_s, unsigned int id, int x, int y){
+    db_s->update_layout(id, x, y);
 }
 
 unsigned int acq_board_id(db *db_s, board *brd){
@@ -79,10 +79,32 @@ void req_thread(db *db_s, const char *addr){
         // exec commands
         if(strcmp(command, "REQ_LAYOUT") == 0) {
 
+            // 接続中のboard情報を返送
+            std::vector<board> tmp;
+            for(unsigned int id : board_cache){
+                // cacheされているboard idの情報を取得
+                board brd{};
+                get_layout(db_s, id, &brd);
+                tmp.emplace_back(brd);
+            }
+            reply(&subscriber, tmp);
+
         }else if(strcmp(command, "STR_LAYOUT") == 0){
+
+            //レイアウトの保存
+            unsigned int id;
+            int x, y;
+            int ret = sscanf(recv_msgs.at(1).data<char>(),
+                             "%d %d %d",
+                             &id, &x, &y);
+            if(ret == EOF) continue; // fail to decode
+
+            store_layout(db_s, id, x, y);
 
         }else if(strcmp(command, "REQ_BRDIDS") == 0){
 
+            // serialとchain_numに関連したboard idを取得
+            // 存在しない場合は新規に作成
             board brd{};
             int ret = sscanf(recv_msgs.at(1).data<char>(),
                              "%s %d %d %d",
@@ -92,8 +114,8 @@ void req_thread(db *db_s, const char *addr){
                              &brd.modes);
             if(ret == EOF) continue; // fail to decode
 
-            brd.id = acq_board_id(db_s, &brd);
-            board_cache.emplace_back(brd.id);
+            brd.id = acq_board_id(db_s, &brd);  // board_idを取得（登録）
+            board_cache.emplace_back(brd.id);   // cacheに追加
 
             reply(&subscriber, std::vector<board>{brd});
 

@@ -51,6 +51,7 @@ public:
     unsigned int get_board_id(unsigned int cid, unsigned int chain_num);
 
     int get_board(unsigned int bid, board *brd);
+    int update_layout(unsigned int bid, int x, int y);
 
 };
 
