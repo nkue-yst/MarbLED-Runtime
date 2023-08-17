@@ -7,5 +7,11 @@ find_package(cppzmq REQUIRED)
 find_package(Threads REQUIRED)
 
 add_executable(driver driver.cpp serial.cpp)
-target_link_libraries(driver cppzmq udev)
+
+add_compile_definitions(driver NO_BOARD)
+
+target_link_libraries(driver cppzmq)
+if (!NO_BOARD)
+    target_link_libraries(driver udev)
+endif (!NO_BOARD)
 

@@ -14,11 +14,13 @@ typedef std::vector<uint16_t> s_data;
 
 struct board{
     char serial[256];
+    uint16_t id;
+    uint16_t controller_id;
     uint8_t version;
-    uint8_t chain;
-    uint8_t num;
-    uint8_t sensors;
+    uint8_t chain_num;
     uint8_t modes;
+    int32_t layout_x;
+    int32_t layout_y;
 };
 
 

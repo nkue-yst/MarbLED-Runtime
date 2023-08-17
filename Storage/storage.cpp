@@ -8,7 +8,6 @@
 #include <zmq.hpp>
 #include <zmq_addon.hpp>
 
-#include <sqlite3.h>
 #include <future>
 
 #include "db.h"
@@ -27,6 +26,7 @@ unsigned int acq_board_id(db *db_s, board *brd){
         db_s->add_controller(brd->serial, 0, 1);
     }
     unsigned int cid = db_s->get_controller_id(brd->serial);
+    brd->controller_id = cid;
 
     count = db_s->is_board_exist(cid, brd->chain_num);
     if(count == 0){
@@ -38,7 +38,7 @@ unsigned int acq_board_id(db *db_s, board *brd){
 }
 
 void reply(zmq::socket_t *soc, std::vector<board> brd){
-    soc->send(zmq::buffer("STORAGE REPLY"), zmq::send_flags::sndmore);
+    if(brd.empty()) return;
     if(brd.size() == 1){
         soc->send(zmq::buffer(&brd.at(0), sizeof(brd.at(0))), zmq::send_flags::none);
         return;
@@ -105,14 +105,13 @@ void req_thread(db *db_s, const char *addr){
 
             // serialとchain_numに関連したboard idを取得
             // 存在しない場合は新規に作成
-            board brd{};
-            int ret = sscanf(recv_msgs.at(1).data<char>(),
-                             "%s %d %d %d",
-                             brd.serial,
-                             &brd.chain_num,
-                             &brd.version,
-                             &brd.modes);
-            if(ret == EOF) continue; // fail to decode
+            board brd = *recv_msgs.at(1).data<board>();
+
+            printf("Dec : %s %d %d %d\n",
+                   brd.serial,
+                   brd.chain_num,
+                   brd.version,
+                   brd.modes);
 
             brd.id = acq_board_id(db_s, &brd);  // board_idを取得（登録）
             board_cache.emplace_back(brd.id);   // cacheに追加
@@ -126,7 +125,7 @@ void req_thread(db *db_s, const char *addr){
 }
 
 
-void run(const char *db_path, const char *addr, const char *req_addr){
+void run(const char *db_path, const char *req_addr){
     db db_s(db_path);
     int ret = db_s.init();
     if(ret < 0)return;
@@ -156,8 +155,6 @@ int main(int argc, char* argv[]){
             db_path = optarg;
         }else if(c == 'b'){
             bind_addr = optarg;
-        }else if(c == 'r'){
-            req_addr = optarg;
         }else{
             // parse error
             printf("unknown argument error\n");
@@ -175,12 +172,7 @@ int main(int argc, char* argv[]){
         printf("require bind address option");
         return -2;
     }
-    // check for bind address
-    if(req_addr == nullptr){
-        printf("require request bind address option");
-        return -2;
-    }
-    run(db_path, bind_addr, req_addr);
+    run(db_path, bind_addr);
 
     return 0;
 }

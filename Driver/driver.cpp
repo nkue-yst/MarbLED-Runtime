@@ -12,7 +12,9 @@
 #include <cmath>
 #include <map>
 
+#if !defined(NO_BOARD)
 #include <libudev.h>
+#endif
 
 #include "serial.h"
 #include "zmq.hpp"
@@ -33,7 +35,7 @@ struct board{
     uint8_t modes;
 };
 
-struct recv_container{
+struct container{
     char serial[256];
     uint16_t id;
     uint16_t controller_id;
@@ -44,11 +46,13 @@ struct recv_container{
     int32_t layout_y;
 };
 
+#if !defined(NO_BOARD)
 const char *get_serial_num(const char *name){
     udev* ud = udev_new();
     udev_device* udv = udev_device_new_from_subsystem_sysname(ud, "tty", name);
     return udev_device_get_property_value(udv, "ID_SERIAL");
 }
+#endif
 
 int get_board_ids(zmq::context_t *ctx, const char *conn_addr, board *brd, std::map<unsigned int, unsigned int> *ids){
     printf("Getting ID from storage.\n");
@@ -60,15 +64,18 @@ int get_board_ids(zmq::context_t *ctx, const char *conn_addr, board *brd, std::m
     printf("connected.\n");
 
     std::vector<zmq::message_t> recv_msgs;
-    char request[128];
 
     for(int i = 0; i < brd->chain; i++){
         recv_msgs.clear();
 
-        snprintf(request, 128, "%s %d %d %d", brd->serial, i, brd->version, brd->modes);
+        container rqc{};
+        strcpy(rqc.serial, brd->serial);
+        rqc.chain_num = i;
+        rqc.version = brd->version;
+        rqc.modes = brd->modes;
 
         req.send(zmq::buffer("STORAGE REQ_BRDIDS"), zmq::send_flags::sndmore);
-        req.send(zmq::buffer(request), zmq::send_flags::none);
+        req.send(zmq::buffer(&rqc, sizeof(rqc)), zmq::send_flags::none);
 
         zmq::recv_multipart(req, std::back_inserter(recv_msgs));
         if(recv_msgs.empty()) {
@@ -76,7 +83,7 @@ int get_board_ids(zmq::context_t *ctx, const char *conn_addr, board *brd, std::m
             continue;
         }
 
-        recv_container rc = *recv_msgs.at(1).data<recv_container>();
+        container rc = *recv_msgs.at(0).data<container>();
         ids->insert(std::make_pair(i, rc.id));
 
         printf("CHAIN NUM[%d] = ID %d\n", i, rc.id);
@@ -84,6 +91,7 @@ int get_board_ids(zmq::context_t *ctx, const char *conn_addr, board *brd, std::m
     }
 
     req.close();
+    return 0;
 }
 
 
@@ -147,7 +155,7 @@ void store_buffer(const f_img& frm){
 
 void receive_data(serial *ser, board *brd){
     std::vector<tm_packet> pacs = std::vector<tm_packet>();
-    f_img frame(brd->modes, std::vector<uint16_t>(brd->sensors));
+    f_img frame(brd->modes * brd->chain, std::vector<uint16_t>(brd->sensors));
 
     bool ret;
 
@@ -166,6 +174,21 @@ void receive_data(serial *ser, board *brd){
         }
     }
 
+}
+
+void push_dummy(board *brd){
+    std::vector<tm_packet> pacs = std::vector<tm_packet>();
+    f_img frame(brd->modes * brd->chain, std::vector<uint16_t>(brd->sensors));
+    for(auto f : frame){
+        std::fill(f.begin(), f.end(), 0xffff);
+    }
+
+    while(!exit_flg) {
+
+        store_buffer(frame);
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    }
 }
 
 void get_board_info(serial *ser, board *brd){
@@ -195,7 +218,11 @@ void get_board_info(serial *ser, board *brd){
 void launch(zmq::context_t *ctx, serial *ser, board *brd, const char *bind_addr, const std::map<unsigned int, unsigned int> *ids){
 
     std::future<void> pub_data_th = std::async(std::launch::async, publish_data, ctx, brd, bind_addr, ids);
+#if !defined(NO_BOARD)
     std::future<void> pico_th = std::async(std::launch::async, receive_data, ser, brd);
+#else
+    std::future<void> pico_th = std::async(std::launch::async, push_dummy, brd);
+#endif
 
     pub_data_th.wait();
     pico_th.wait();
@@ -215,6 +242,7 @@ void run(const char* port, const char* bind_addr, const char* info_addr, int mod
     char name[256];
     sscanf(port, "/dev/%s", name);
 
+#if !defined(NO_BOARD)
     // open serial port
     int ret = ser.tm_open();
     if(ret != 0)exit(-1);
@@ -225,6 +253,13 @@ void run(const char* port, const char* bind_addr, const char* info_addr, int mod
     get_board_info(&ser, &brd);
     brd.modes = modes;
     brd.serial = get_serial_num(name);
+#else
+    printf("Test Mode Enabled.\n");
+    brd.version = 4;
+    brd.chain = 2;
+    brd.modes = modes;
+    brd.serial = "board_is_not_connected";
+#endif
 
     printf("SERIAL_NUM  : %s\n", brd.serial);
     printf("BOARD_VER   : %d\n", brd.version);

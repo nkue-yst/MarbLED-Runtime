@@ -9,7 +9,7 @@
 
 frame::frame(board brd) {
     brd_data = brd;
-    buf = std::vector<s_data>(brd.modes, s_data(brd.sensors));
+    buf = std::vector<s_data>(brd.modes, s_data(brd.version));
 }
 
 void frame::update(uint8_t mode, const uint16_t *data) {

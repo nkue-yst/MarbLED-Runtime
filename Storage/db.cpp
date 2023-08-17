@@ -32,8 +32,6 @@ void db::close(){
  */
 int db::init(){
 
-    open();
-
     int ret = 0;
     // create controller table
     {
@@ -68,8 +66,6 @@ int db::init(){
         }
     }
 
-    close();
-
     return 0;
 }
 
@@ -94,16 +90,19 @@ int db::callback_count(void* param, int col_cnt, char** row_txt, char** col_name
  * @return
  */
 int db::exec_sql(const char* sql){
+    open();
+
     char *err = nullptr;
 
     int ret = sqlite3_exec(db_s, sql, nullptr, nullptr, &err);
     if(ret != SQLITE_OK) {
-        std::cerr << "sql exec error : " << err << std::endl;
+        std::cerr << "sql exec error [" << ret << "]: " << err << std::endl;
         sqlite3_close(db_s);
         sqlite3_free(err);
         return -1;
     }
 
+    close();
     return 0;
 }
 
@@ -114,6 +113,7 @@ int db::exec_sql(const char* sql){
  * @return
  */
 int db::is_table_exist(const char* table){
+    open();
 
     char sql[256];
     char* err;
@@ -122,16 +122,20 @@ int db::is_table_exist(const char* table){
     snprintf(sql, 256, "select count(*) from sqlite_master  where type='table' and name='%s';", table);
     int ret = sqlite3_exec(db_s, sql, callback_count, (void*)(&count), &err);
     if(ret != SQLITE_OK) {
-        std::cerr << "sql exec error : " << err << std::endl;
+        std::cerr << "sql exec error [is_table_exist]: " << err << std::endl;
+        std::cerr << sql << std::endl;
         sqlite3_close(db_s);
         sqlite3_free(err);
         return false;
     }
 
+    close();
     return count;
 }
 
 unsigned int db::get_controller_id(const char *serial){
+    open();
+
     int id;
 
     char sql[256];
@@ -139,11 +143,14 @@ unsigned int db::get_controller_id(const char *serial){
     snprintf(sql, 256, "SELECT id FROM controller  WHERE serial=\"%s\";", serial);
     int ret = sqlite3_exec(db_s, sql, callback_count, (void*)(&id), &err);
     if(ret != SQLITE_OK){
-        std::cerr << "sql error occur : " << err << std::endl;
+        std::cerr << "sql error occur [get_controller_id]: " << err << std::endl;
+        std::cerr << sql << std::endl;
         sqlite3_close(db_s);
         sqlite3_free(err);
         return -1;
     }
+
+    close();
     return id;
 }
 
@@ -156,16 +163,13 @@ unsigned int db::get_controller_id(const char *serial){
 int db::add_board(board *brd){
     open();
 
-    int id = get_controller_id(brd->serial);
-    if(id == -1)return -1;
-
     {
         // if controller does not register
         char sql[256];
         snprintf(sql,
                  256,
                  "INSERT INTO board(controller_id, chain_num, version, modes) VALUES(%d, %d, %d, %d);",
-                 id,
+                 brd->controller_id,
                  brd->chain_num,
                  brd->version,
                  brd->modes);
@@ -178,17 +182,15 @@ int db::add_board(board *brd){
 }
 
 int db::callback_board(void* param, int col_cnt, char** row_txt, char** col_name){
-    board brd{
-        "",
-        static_cast<uint16_t>(atoi(row_txt[0])),
-        static_cast<uint16_t>(atoi(row_txt[1])),
-        static_cast<uint8_t>(atoi(row_txt[2])),
-        static_cast<uint8_t>(atoi(row_txt[3])),
-        static_cast<uint8_t>(atoi(row_txt[4])),
-        atoi(row_txt[5]),
-        atoi(row_txt[6])
-    };
-    *(board*)param = brd;
+
+    auto* brd_tmp = (board *)param;
+    brd_tmp->id = static_cast<uint16_t>(atoi(row_txt[0]));
+    brd_tmp->controller_id = static_cast<uint16_t>(atoi(row_txt[1]));
+    brd_tmp->version = static_cast<uint8_t>(atoi(row_txt[2]));
+    brd_tmp->chain_num = static_cast<uint8_t>(atoi(row_txt[3]));
+    brd_tmp->modes=static_cast<uint8_t>(atoi(row_txt[4]));
+    brd_tmp->layout_x=atoi(row_txt[5]);
+    brd_tmp->layout_y=atoi(row_txt[6]);
 
     return 0;
 }
@@ -205,6 +207,7 @@ int db::is_controller_exist(const char *serial) {
         int ret = sqlite3_exec(db_s, sql, callback_count, (void *) (&count), &err);
         if (ret != SQLITE_OK) {
             std::cerr << "sql error occur : " << err << std::endl;
+            std::cerr << sql << std::endl;
             close();
             sqlite3_free(err);
             return -1;
@@ -228,6 +231,7 @@ int db::is_board_exist(unsigned int cid, unsigned int chain_num) {
         int ret = sqlite3_exec(db_s, sql, callback_count, (void *) (&count), &err);
         if (ret != SQLITE_OK) {
             std::cerr << "sql error occur : " << err << std::endl;
+            std::cerr << sql << std::endl;
             close();
             sqlite3_free(err);
             return -1;
@@ -261,10 +265,11 @@ unsigned int db::get_board_id(unsigned int cid, unsigned int chain_num){
     {
         char sql[256];
         char *err;
-        snprintf(sql, 256, "SELECT count(*) FROM board  WHERE controller_id=%d AND chain_num=%d;", cid, chain_num);
+        snprintf(sql, 256, "SELECT id FROM board  WHERE controller_id=%d AND chain_num=%d;", cid, chain_num);
         int ret = sqlite3_exec(db_s, sql, callback_count, (void *) (&count), &err);
         if (ret != SQLITE_OK) {
-            std::cerr << "sql error occur : " << err << std::endl;
+            std::cerr << "sql error occur[" << ret << "] : " << err << std::endl;
+            std::cerr << sql << std::endl;
             close();
             sqlite3_free(err);
             return -1;
@@ -286,11 +291,12 @@ int db::get_board(unsigned int bid, board *brd) {
         char *err;
         snprintf(sql,
                  256,
-                 "SELECT id, controller_id, version, chain_num, modes, x, y FROM board  WHERE id=%d INNER JOIN layout ON board.id=layout.board_id;",
+                 "SELECT board.id, controller_id, version, chain_num, modes, bx, by FROM board INNER JOIN layout ON board.id=layout.board_id WHERE board.id=%d;",
                  bid);
-        int ret = sqlite3_exec(db_s, sql, callback_board, (void *) (&brd), &err);
+        int ret = sqlite3_exec(db_s, sql, callback_board, (void *)brd, &err);
         if (ret != SQLITE_OK) {
             std::cerr << "sql error occur : " << err << std::endl;
+            std::cerr << sql << std::endl;
             close();
             sqlite3_free(err);
             return -1;

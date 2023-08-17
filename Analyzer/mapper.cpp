@@ -27,7 +27,7 @@ void Mapper::set_connected_boards(const std::vector<board>& boards) {
         char key[256]{};
         frame f(brd);
 
-        local_key(key, brd.serial, brd.num);
+        local_key(key, brd.serial, brd.version);
         frames.emplace(key, f);
     }
 }
