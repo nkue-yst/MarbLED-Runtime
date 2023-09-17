@@ -82,6 +82,9 @@ int get_board_ids(zmq::context_t *ctx, const char *conn_addr, board *brd, std::m
             std::cout << "timeout" << std::endl;
             continue;
         }
+        if(recv_msgs.size() != 2) continue;
+
+        recv_msgs.erase(recv_msgs.begin());
 
         container rc = *recv_msgs.at(0).data<container>();
         ids->insert(std::make_pair(i, rc.id));
@@ -296,9 +299,7 @@ int main(int argc, char* argv[]){
 
     // get options
     while((c = getopt(argc, argv, optstring)) != -1){
-        if(c == 't'){
-            s_modes = (int)strtol(optarg, nullptr,  10);
-        }else if(c == 'p') {
+        if(c == 'p') {
             ser_p = optarg;
         }else if(c == 'b') {
             bind_addr = optarg;
@@ -313,13 +314,18 @@ int main(int argc, char* argv[]){
 
     // check for serial port
     if(ser_p == nullptr){
-        printf("require serial port option");
+        printf("require serial port option -p");
         return -1;
     }
     // check for bind address
     if(bind_addr == nullptr){
-        printf("require bind address option");
+        printf("require bind address option -b");
         return -2;
+    }
+    // check for bind address
+    if(info_addr == nullptr){
+        printf("require storage address option -i");
+        return -3;
     }
 
     run(ser_p, bind_addr, info_addr, s_modes);

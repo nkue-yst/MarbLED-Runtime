@@ -4,6 +4,7 @@
 #include <string>
 #include <unistd.h>
 #include <iostream>
+#include <set>
 
 #include <zmq.hpp>
 #include <zmq_addon.hpp>
@@ -38,13 +39,11 @@ unsigned int acq_board_id(db *db_s, board *brd){
 }
 
 void reply(zmq::socket_t *soc, std::vector<board> brd){
-    if(brd.empty()) return;
-    if(brd.size() == 1){
-        soc->send(zmq::buffer(&brd.at(0), sizeof(brd.at(0))), zmq::send_flags::none);
-        return;
-    }
-
     zmq::send_flags flags = zmq::send_flags::sndmore;
+    if (brd.empty()) flags = zmq::send_flags::none;
+
+    soc->send(zmq::buffer("STORAGE REPLY"), flags);
+
     for(int i = 0; i < brd.size(); i++){
         if(i == brd.size() -1) flags = zmq::send_flags::none;
         soc->send(zmq::buffer(&brd.at(i), sizeof(brd.at(i))), flags);
@@ -59,7 +58,7 @@ void req_thread(db *db_s, const char *addr){
     std::cout <<  "bind addr" << std::endl;
 
     std::vector<zmq::message_t> recv_msgs;
-    std::vector<unsigned int> board_cache;
+    std::set<unsigned int> board_cache;
 
     while(1){
         recv_msgs.clear();
@@ -80,7 +79,7 @@ void req_thread(db *db_s, const char *addr){
         if(strcmp(command, "REQ_LAYOUT") == 0) {
 
             // 接続中のboard情報を返送
-            std::vector<board> tmp;
+            std::vector<board> tmp{};
             for(unsigned int id : board_cache){
                 // cacheされているboard idの情報を取得
                 board brd{};
@@ -114,7 +113,7 @@ void req_thread(db *db_s, const char *addr){
                    brd.modes);
 
             brd.id = acq_board_id(db_s, &brd);  // board_idを取得（登録）
-            board_cache.emplace_back(brd.id);   // cacheに追加
+            board_cache.insert(brd.id);   // cacheに追加
 
             reply(&subscriber, std::vector<board>{brd});
 

@@ -8,6 +8,7 @@
 #include <opencv2/opencv.hpp>
 #include <future>
 #include <thread>
+#include <queue>
 
 #include "frame.h"
 #include "mapper.h"
@@ -28,6 +29,9 @@ void get_connected_boards(const char *addr, std::vector<board> *brds) {
     std::vector<zmq::message_t> recv_msgs;
     zmq::recv_multipart(req, std::back_inserter(recv_msgs));
 
+    // erase header ( STORAGE REPLY )
+    if(!recv_msgs.empty()) recv_msgs.erase(recv_msgs.begin());
+
     req.close();
 
     for(auto & recv_msg : recv_msgs) {
@@ -37,7 +41,13 @@ void get_connected_boards(const char *addr, std::vector<board> *brds) {
 
 }
 
-void subscribe_data(Mapper *map, const char *addr){
+void update_frames(const uint16_t bid, const uint16_t mode, const uint16_t *data, std::vector<frame> *frames){
+    for(auto frame : *frames){
+        if(bid == frame.get_id()) frame.update(mode, data);
+    }
+}
+
+void subscribe_data(std::vector<frame> *frames, const char *addr){
     zmq::context_t ctx(1);
     zmq::socket_t subscriber(ctx, zmq::socket_type::sub);
     subscriber.bind(addr);
@@ -53,47 +63,63 @@ void subscribe_data(Mapper *map, const char *addr){
             std::cout << "timeout" << std::endl;
             continue;
         }
+        if(recv_msgs.size() != 2) continue;
 
-        char serial[256] = {};
-        int chain, c_num, mode;
+        int bid, chain, c_num, mode;
         int ret = sscanf(recv_msgs.at(0).data<char>(), "BRD_DATA %s %d %d %d",
-                         serial,
+                         &bid,
                          &chain,
                          &c_num,
                          &mode);
         if(ret == EOF) continue; //fail to decode
 
-        map->update(serial, c_num, mode, recv_msgs.at(1).data<uint16_t>());
+        update_frames(bid, mode, recv_msgs.at(1).data<uint16_t>(), frames);
 
     }
 }
 
 
-void analyze(Mapper *mapper){
+void update_sens_img(Mapper *me){
+    while(true){
+        me->update();
+    }
+}
 
+
+void launch(std::vector<frame> *frms, const char *addr, Mapper *mapper){
+    std::future<void> recv_meta = std::async(std::launch::async, subscribe_data, frms, addr);
+    std::future<void> img_update = std::async(std::launch::async, update_sens_img, mapper);
+    recv_meta.wait();
+    img_update.wait();
 }
 
 
 void run(const char *addr, const char *storage_addr){
-    Mapper mapper;
 
-    std::cout << "getting board data" << std::endl;
+    std::cout << "Getting board data..." << std::endl;
+
+    // get board layout from storage
     std::vector<board> brds;
     get_connected_boards(storage_addr, &brds);
 
-    std::cout << "connected boards" << std::endl;
-    for(auto brd : brds){
-        std::cout << "id : " << brd.id << std::endl;
+    // check board count
+    if(brds.empty()){
+        std::cerr << "No modules are connected." << std::endl
+        << "Connected one or more modules and reboot.";
+        exit(-1);
     }
 
-    /*mapper.set_connected_boards(brds);
-    std::cout << "ok" << std::endl;
+    // create frame instance by board data
+    std::vector<frame> frms;
+    std::cout << "Connected boards" << std::endl;
+    for(auto brd : brds){
+        std::cout << "BID : " << brd.id << std::endl;
+        frms.emplace_back(brd);
+    }
 
-    std::future<void> recv_meta = std::async(std::launch::async, subscribe_data, &mapper, addr);
+    Mapper mapper(&frms);
 
-    analyze(&mapper);
-
-    recv_meta.wait();*/
+    launch(&frms, addr, &mapper);
 }
 
 int main(int argc, char* argv[]){

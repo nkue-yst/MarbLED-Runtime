@@ -12,14 +12,15 @@
 class Mapper {
 
 private:
-    std::map<char*, frame> frames;
+    std::vector<frame> *frms;
+    cv::Mat fb;
 
-    static void local_key(char *merged_key, const char *serial, int c_num);
+    cv::Size2i calc_fb_size();
+    void place_mat(cv::Point2i p, const cv::Mat& src);
 
 public:
-    Mapper();
-    void set_connected_boards(const std::vector<board>& boards);
-    void update(const char *serial, int c_num, int mode, const uint16_t *data);
+    explicit Mapper(std::vector<frame> *frames);
+    void update();
 
 };
 
