@@ -121,7 +121,6 @@ void publish_data(zmq::context_t *ctx, board *brd, const char *bind_addr, const 
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
             continue;
         }
-        printf("get from buffer\n");
 
         // get from fifo buffer
         frame = sensor_queue.front();
@@ -143,17 +142,16 @@ void publish_data(zmq::context_t *ctx, board *brd, const char *bind_addr, const 
             publisher.send(zmq::buffer(frame.at(i)), zmq::send_flags::none);
 
         }
-        printf("published\n");
     }
 }
 
 void store_buffer(const f_img& frm){
     // block when fifo buffer is max
     while(sensor_queue.size() >= BUFFER_MAX){
+        std::cerr << "buffer is max" << std::endl;
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     sensor_queue.push(frm);
-    printf("store\n");
 }
 
 void receive_data(serial *ser, board *brd){
@@ -182,7 +180,7 @@ void receive_data(serial *ser, board *brd){
 void push_dummy(board *brd){
     std::vector<tm_packet> pacs = std::vector<tm_packet>();
     f_img frame(brd->modes * brd->chain, std::vector<uint16_t>(brd->sensors));
-    for(auto f : frame){
+    for(auto &f : frame){
         std::fill(f.begin(), f.end(), 0xffff);
     }
 
@@ -261,6 +259,7 @@ void run(const char* port, const char* bind_addr, const char* info_addr, int mod
     brd.version = 4;
     brd.chain = 2;
     brd.modes = modes;
+    brd.sensors = 18;
     brd.serial = "board_is_not_connected";
 #endif
 

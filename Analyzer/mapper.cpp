@@ -9,7 +9,7 @@ Mapper::Mapper(std::vector<frame> *frames){
     frms = frames;
 
     cv::Size2i fb_size = calc_fb_size();
-    fb = cv::Mat(fb_size.width, fb_size.height, CV_16UC1);
+    fb = cv::Mat::zeros(fb_size.width, fb_size.height, CV_16UC1);
 }
 
 cv::Size2i Mapper::calc_fb_size() {
@@ -30,23 +30,24 @@ cv::Size2i Mapper::calc_fb_size() {
     return {maxx - minx, maxy - miny};
 }
 
-void Mapper::place_mat(cv::Point2i p, const cv::Mat& src) {
-    for(int i = 0; i < src.cols; i++){
-        for(int j = 0; j < src.rows; j++){
+void Mapper::place_mat(cv::Point2i p, const cv::Mat *src) {
+    for(int i = 0; i < src->cols; i++){
+        for(int j = 0; j < src->rows; j++){
             if( p.x + i > fb.cols | p.y + j > fb.rows) continue;
-            fb.at<uint16_t>(p.x + i, p.y + j) = src.at<uint16_t>(i, j);
+            fb.at<uint16_t>(p.y + j, p.x + i) = src->at<uint16_t>(j, i);
         }
     }
 }
 
 void Mapper::update() {
+
+    cv::Mat p;
     for(auto frm : *frms){
-        cv::Mat p;
         frm.get_mat(p);
-        place_mat(frm.get_layout(), p);
+        place_mat(frm.get_layout(), &p);
     }
     cv::Mat tmp;
-    cv::resize(fb, tmp, cv::Size(100, 100), 30, 30, cv::INTER_NEAREST);
+    cv::resize(p, tmp, cv::Size(100, 100), 30, 30, cv::INTER_NEAREST);
     cv::imshow("prev", tmp);
-    cv::waitKey(1);
+    cv::waitKey(100);
 }

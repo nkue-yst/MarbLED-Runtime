@@ -33,10 +33,11 @@ private:
     std::vector<s_data> buf;
     cv::Mat f_buf;
 
+    int sensors;
     cv::Size2i f_buf_size;
 
     void pack_mat(const uint16_t *map);
-    void led2sens_coordinate(const cv::Point2i *src, cv::Point2i *dst);
+    void led2sens_coordinate(const cv::Point2i *src, cv::Point2i *dst) const;
     Brd_Master get_brd_master() const;
 
 public:
@@ -47,7 +48,7 @@ public:
     cv::Size2i get_frame_size();
     void get_mat(cv::OutputArray dst);
 
-    void update(uint8_t mode, const uint16_t *data);
+    void update(uint8_t mode, const uint16_t *data, unsigned long len);
 };
 
 

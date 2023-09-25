@@ -41,19 +41,22 @@ void get_connected_boards(const char *addr, std::vector<board> *brds) {
 
 }
 
-void update_frames(const uint16_t bid, const uint16_t mode, const uint16_t *data, std::vector<frame> *frames){
-    for(auto frame : *frames){
-        if(bid == frame.get_id()) frame.update(mode, data);
+void update_frames(const uint16_t bid, const uint16_t mode, const uint16_t *data, const unsigned long len, std::vector<frame> *frames){
+    for(auto & frame : *frames){
+        if(bid == frame.get_id()) frame.update(mode, data, len);
     }
 }
 
 void subscribe_data(std::vector<frame> *frames, const char *addr){
-    zmq::context_t ctx(1);
+    std::cout << "subscribing" << std::endl;
+    zmq::context_t ctx(2);
     zmq::socket_t subscriber(ctx, zmq::socket_type::sub);
     subscriber.bind(addr);
 
     subscriber.set(zmq::sockopt::subscribe, "BRD_DATA");
     std::vector<zmq::message_t> recv_msgs;
+
+    std::cout << "bind on " << addr << std::endl;
 
     while(true){
         recv_msgs.clear();
@@ -66,15 +69,15 @@ void subscribe_data(std::vector<frame> *frames, const char *addr){
         if(recv_msgs.size() != 2) continue;
 
         int bid, chain, c_num, mode;
-        int ret = sscanf(recv_msgs.at(0).data<char>(), "BRD_DATA %s %d %d %d",
+        int ret = sscanf(recv_msgs.at(0).data<char>(), "BRD_DATA %d %d %d %d",
                          &bid,
                          &chain,
                          &c_num,
                          &mode);
         if(ret == EOF) continue; //fail to decode
 
-        update_frames(bid, mode, recv_msgs.at(1).data<uint16_t>(), frames);
-
+        unsigned long d_size = recv_msgs.at(1).size() / sizeof(uint16_t);
+        update_frames(bid, mode, recv_msgs.at(1).data<uint16_t>(), d_size, frames);
     }
 }
 

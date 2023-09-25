@@ -16,7 +16,7 @@ private:
     cv::Mat fb;
 
     cv::Size2i calc_fb_size();
-    void place_mat(cv::Point2i p, const cv::Mat& src);
+    void place_mat(cv::Point2i p, const cv::Mat *src);
 
 public:
     explicit Mapper(std::vector<frame> *frames);
