@@ -1,6 +1,8 @@
 ### Setup cmake project ###
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.22)
 project(MarbLED-runtime)
+
+set(CMAKE_CXX_STANDARD 14)
 
 ### Build thirdparty libraries ###
 add_subdirectory(${CMAKE_SOURCE_DIR}/thirdparty)
@@ -13,3 +15,6 @@ file(COPY
 
 ### Build main programs ###
 add_subdirectory(AppManager)
+add_subdirectory(Storage)
+add_subdirectory(Analyzer)
+add_subdirectory(Driver)
