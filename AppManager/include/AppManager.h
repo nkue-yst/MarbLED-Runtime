@@ -18,11 +18,11 @@
 namespace tll
 {
     /* アプリを動作させるためのアプリクラス */
-    class BaseApp : public TUIO::TuioListener
+    class AppManager : public TUIO::TuioListener
     {
     public:
-        BaseApp();
-        ~BaseApp();
+        AppManager();
+        ~AppManager();
 
         void addTuioObject(TUIO::TuioObject *tobj) override
         {
