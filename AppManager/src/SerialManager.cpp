@@ -32,12 +32,21 @@ namespace tll
         {
             auto send_data = []() -> void
             {
-                /* 送信ソケットの作成 */
+                //////////////////////////////
+                ///// 送信ソケットの作成 /////
+                //////////////////////////////
                 zmq::context_t ctx;
                 zmq::socket_t pub(ctx, zmq::socket_type::pub);
                 pub.bind("tcp://*:44100");
 
-                /* 色情報の送信を開始 */
+                // 基板情報のリストを取得する
+                std::vector<Container> board_list;
+                std::cout << get_connected_boards("tcp://127.0.0.1:8001", &board_list) << std::endl;
+                printLog("Get MarbLED board infomations.");
+
+                //////////////////////////////
+                ///// 色情報の送信を開始 /////
+                //////////////////////////////
                 printLog("Start sending color data");
                 while (!TLL_ENGINE(EventHandler)->getQuitFlag())
                 {
@@ -50,6 +59,7 @@ namespace tll
                     //////////////////////////////////
                     ///// ⇣ Deprecated Version ⇣ /////
                     //////////////////////////////////
+                    /*
                     std::vector<uint8_t> color_vec;    // 送信用配列
                     color_vec.reserve(TLL_ENGINE(PanelManager)->getWidth() * TLL_ENGINE(PanelManager)->getHeight() * 3);
 
@@ -69,6 +79,7 @@ namespace tll
 
                     zmq::message_t msg(color_vec);
                     res = pub.send(msg, zmq::send_flags::none);
+                    */
                     //////////////////////////////////
                     ///// ⇡ Deprecated Version ⇡ /////
                     //////////////////////////////////
@@ -77,7 +88,14 @@ namespace tll
                     ///////////////////////////
                     ///// ⇣ New Version ⇣ /////
                     ///////////////////////////
-                    Container test;
+                    for (auto board : board_list)
+                    {
+                        std::vector<uint8_t> red;
+                        std::vector<uint8_t> green;
+                        std::vector<uint8_t> blue;
+
+                        
+                    }
                     ///////////////////////////
                     ///// ⇡ New Version ⇡ /////
                     ///////////////////////////
