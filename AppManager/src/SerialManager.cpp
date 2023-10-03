@@ -19,6 +19,8 @@
 #include "Event.hpp"
 #include "PanelManager.hpp"
 
+#include "utility.h"
+
 #include <zmq.hpp>
 
 namespace tll
@@ -45,6 +47,9 @@ namespace tll
                         continue;
                     }
 
+                    //////////////////////////////////
+                    ///// ⇣ Deprecated Version ⇣ /////
+                    //////////////////////////////////
                     std::vector<uint8_t> color_vec;    // 送信用配列
                     color_vec.reserve(TLL_ENGINE(PanelManager)->getWidth() * TLL_ENGINE(PanelManager)->getHeight() * 3);
 
@@ -64,6 +69,18 @@ namespace tll
 
                     zmq::message_t msg(color_vec);
                     res = pub.send(msg, zmq::send_flags::none);
+                    //////////////////////////////////
+                    ///// ⇡ Deprecated Version ⇡ /////
+                    //////////////////////////////////
+
+
+                    ///////////////////////////
+                    ///// ⇣ New Version ⇣ /////
+                    ///////////////////////////
+                    Container test;
+                    ///////////////////////////
+                    ///// ⇡ New Version ⇡ /////
+                    ///////////////////////////
 
                     TLL_ENGINE(SerialManager)->send_ready = false;
                 }
