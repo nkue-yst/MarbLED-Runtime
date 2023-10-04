@@ -7,3 +7,4 @@ find_package(Threads REQUIRED)
 
 add_executable(storage storage.cpp db.cpp)
 target_link_libraries(storage sqlite3 cppzmq)
+target_include_directories(storage PUBLIC ${CMAKE_SOURCE_DIR}/thirdparty/libsqlite3)
