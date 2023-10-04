@@ -114,10 +114,10 @@ namespace tll
                         //////////////////////////////////////////
                         ///// Send board ID and pixel colors /////
                         //////////////////////////////////////////
-                        pub.send(id, zmq::send_flags::sndmore);       // Board ID
-                        pub.send(r_array, zmq::send_flags::sndmore);  // Red
-                        pub.send(g_array, zmq::send_flags::sndmore);  // Green
-                        pub.send(b_array, zmq::send_flags::none);     // Blue
+                        pub.send(zmq::message_t(id), zmq::send_flags::sndmore);       // Board ID
+                        pub.send(zmq::message_t(r_array), zmq::send_flags::sndmore);  // Red
+                        pub.send(zmq::message_t(g_array), zmq::send_flags::sndmore);  // Green
+                        pub.send(zmq::message_t(b_array), zmq::send_flags::none);     // Blue
                     }
                     /////////////////////////////////////
                     ////////// ⇡ New Version ⇡ //////////
