@@ -28,6 +28,9 @@ namespace tll
 
     namespace
     {
+        constexpr uint32_t led_width  = 18;
+        constexpr uint32_t led_height = 18;
+
         void threadSendColor()
         {
             auto send_data = []() -> void
@@ -37,7 +40,8 @@ namespace tll
                 //////////////////////////////
                 zmq::context_t ctx;
                 zmq::socket_t pub(ctx, zmq::socket_type::pub);
-                pub.bind("tcp://*:44100");
+                //pub.bind("tcp://*:44100");       // Connection for old version
+                pub.bind("tcp://*:8001");  // Connection for new version
 
                 // 基板情報のリストを取得する
                 std::vector<Container> board_list;
@@ -56,9 +60,9 @@ namespace tll
                         continue;
                     }
 
-                    //////////////////////////////////
-                    ///// ⇣ Deprecated Version ⇣ /////
-                    //////////////////////////////////
+                    ////////////////////////////////////////////
+                    ////////// ⇣ Deprecated Version ⇣ //////////
+                    ////////////////////////////////////////////
                     /*
                     std::vector<uint8_t> color_vec;    // 送信用配列
                     color_vec.reserve(TLL_ENGINE(PanelManager)->getWidth() * TLL_ENGINE(PanelManager)->getHeight() * 3);
@@ -80,25 +84,44 @@ namespace tll
                     zmq::message_t msg(color_vec);
                     res = pub.send(msg, zmq::send_flags::none);
                     */
-                    //////////////////////////////////
-                    ///// ⇡ Deprecated Version ⇡ /////
-                    //////////////////////////////////
+                    ////////////////////////////////////////////
+                    ////////// ⇡ Deprecated Version ⇡ //////////
+                    ////////////////////////////////////////////
 
 
-                    ///////////////////////////
-                    ///// ⇣ New Version ⇣ /////
-                    ///////////////////////////
+                    /////////////////////////////////////
+                    ////////// ⇣ New Version ⇣ //////////
+                    /////////////////////////////////////
                     for (auto board : board_list)
                     {
-                        std::vector<uint8_t> red;
-                        std::vector<uint8_t> green;
-                        std::vector<uint8_t> blue;
+                        std::array<uint16_t, 1> id = { board.id };  // Board ID
+                        std::vector<uint8_t> r_array;               // Red array
+                        std::vector<uint8_t> g_array;               // Green array
+                        std::vector<uint8_t> b_array;               // Blue array
 
-                        
+                        for (uint32_t y = board.layout_y; y < board.layout_y + led_height; ++y)
+                        {
+                            for (uint32_t x = board.layout_x; x < board.layout_x + led_width; ++x)
+                            {
+                                Color c = TLL_ENGINE(PanelManager)->getColor(x, y);
+
+                                r_array.push_back(c.r_);
+                                g_array.push_back(c.g_);
+                                b_array.push_back(c.b_);
+                            }
+                        }
+
+                        //////////////////////////////////////////
+                        ///// Send board ID and pixel colors /////
+                        //////////////////////////////////////////
+                        pub.send(id, zmq::send_flags::sndmore);       // Board ID
+                        pub.send(r_array, zmq::send_flags::sndmore);  // Red
+                        pub.send(g_array, zmq::send_flags::sndmore);  // Green
+                        pub.send(b_array, zmq::send_flags::none);     // Blue
                     }
-                    ///////////////////////////
-                    ///// ⇡ New Version ⇡ /////
-                    ///////////////////////////
+                    /////////////////////////////////////
+                    ////////// ⇡ New Version ⇡ //////////
+                    /////////////////////////////////////
 
                     TLL_ENGINE(SerialManager)->send_ready = false;
                 }
