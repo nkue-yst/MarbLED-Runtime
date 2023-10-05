@@ -81,8 +81,51 @@ void subscribe_data(std::vector<frame> *frames, const char *addr){
     }
 }
 
+void command_handling(std::vector<frame> *frames, const char *addr){
+    zmq::context_t ctx(1);
+    zmq::socket_t subscriber(ctx, zmq::socket_type::rep);
+    subscriber.bind(addr);
 
-void update_sens_img(Mapper *me){
+    std::vector<zmq::message_t> recv_msgs;
+
+    while(1){
+        recv_msgs.clear();
+
+        zmq::recv_multipart(subscriber, std::back_inserter(recv_msgs));
+        if(recv_msgs.empty()) {
+            std::cout << "timeout" << std::endl;
+            continue;
+        }
+
+        char command[256]{};
+        int ret = sscanf(recv_msgs.at(0).data<char>(),
+                         "ANALYZER %s",
+                         command);
+        if(ret == EOF) continue; // fail to decode
+
+        // exec commands
+        if(strcmp(command, "CAL_UPPER") == 0) {
+
+            for(auto &frm : *frames){
+                frm.set_upper();
+            }
+
+        }else if(strcmp(command, "CAL_LOWER") == 0){
+
+            for(auto &frm : *frames){
+                frm.set_lower();
+            }
+
+        }else if(strcmp(command, "RELOAD") == 0){
+
+        }
+
+
+    }
+}
+
+
+void update(Mapper *me){
     while(true){
         me->update();
     }
@@ -91,7 +134,7 @@ void update_sens_img(Mapper *me){
 
 void launch(std::vector<frame> *frms, const char *addr, Mapper *mapper){
     std::future<void> recv_meta = std::async(std::launch::async, subscribe_data, frms, addr);
-    std::future<void> img_update = std::async(std::launch::async, update_sens_img, mapper);
+    std::future<void> img_update = std::async(std::launch::async, update, mapper);
     recv_meta.wait();
     img_update.wait();
 }

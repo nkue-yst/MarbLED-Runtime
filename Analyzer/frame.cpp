@@ -17,6 +17,10 @@ frame::frame(board brd) {
     sensors = bm.sensors;
     f_buf_size = get_frame_size();
     f_buf = cv::Mat::zeros(f_buf_size, CV_16UC1);
+
+    cal_upper = cv::Mat::zeros(f_buf_size, CV_16UC1);
+    cal_lower = cv::Mat::zeros(f_buf_size, CV_16UC1);
+    cal_gain = cv::Mat::zeros(f_buf_size, CV_16FC1);
 }
 
 uint16_t frame::get_id() const {
@@ -108,6 +112,37 @@ void frame::get_mat(cv::OutputArray dst) {
     //f_buf.copyTo(mat);
 }
 
+void frame::get_mat_calibrated(cv::OutputArray dst){
+    dst.create(f_buf_size, CV_8UC1);
+    cv::Mat m = dst.getMat();
+
+    cv::Mat tmp;
+    get_mat(tmp);
+
+    // remove offset
+    for(int i = 0; i < f_buf_size.height; i++){
+        auto *cl_ptr = cal_lower.ptr<uint16_t>(i);
+        auto *fb_ptr = tmp.ptr<uint16_t>(i);
+        for(int j = 0; j < f_buf_size.width; j++){
+            if(fb_ptr[j] > cl_ptr[j]){
+                fb_ptr[j] -= cl_ptr[j];
+            }else{
+                fb_ptr[j] = 0x00;
+            }
+        }
+    }
+
+    // calc range
+    for(int i = 0; i < f_buf_size.height; i++){
+        auto *cg_ptr = cal_gain.ptr<float>(i);
+        auto *fb_ptr = tmp.ptr<uint16_t>(i);
+        auto *dst_ptr = m.ptr<uint8_t>(i);
+        for(int j = 0; j < f_buf_size.width; j++){
+            dst_ptr[j] = (float)fb_ptr[j] * (float)cg_ptr[j];
+        }
+    }
+}
+
 void frame::led2sens_coordinate(const cv::Point2i *src, cv::Point2i *dst) const {
     switch(brd_data.version){
         case 4:
@@ -119,4 +154,41 @@ void frame::led2sens_coordinate(const cv::Point2i *src, cv::Point2i *dst) const 
             dst->y = floor(y);
             break;
     }
+}
+
+void frame::calc_gain(){
+    for(int i = 0; i < f_buf_size.height; i++){
+        auto *cl_ptr = cal_lower.ptr<uint16_t>(i);
+        auto *cu_ptr = cal_upper.ptr<uint16_t>(i);
+        auto *cg_ptr = cal_gain.ptr<float>(i);
+        for(int j = 0; j < f_buf_size.width; j++){
+            if(cu_ptr[j] > cl_ptr[j]){
+                cg_ptr[j] = 255.0 / (float)(cu_ptr[j] - cl_ptr[j]);
+            }else{
+                cg_ptr[j] = 0.0;
+            }
+        }
+    }
+}
+
+void frame::set_lower() {
+    for(int i = 0; i < f_buf_size.height; i++){
+        auto *m_ptr = cal_lower.ptr<uint16_t>(i);
+        auto *fb_ptr = f_buf.ptr<uint16_t>(i);
+        for(int j = 0; j < f_buf_size.width; j++){
+            m_ptr[j] = fb_ptr[j];
+        }
+    }
+    calc_gain();
+}
+
+void frame::set_upper() {
+    for(int i = 0; i < f_buf_size.height; i++){
+        auto *m_ptr = cal_upper.ptr<uint16_t>(i);
+        auto *fb_ptr = f_buf.ptr<uint16_t>(i);
+        for(int j = 0; j < f_buf_size.width; j++){
+            m_ptr[j] = fb_ptr[j];
+        }
+    }
+    calc_gain();
 }

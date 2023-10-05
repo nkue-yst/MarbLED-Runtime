@@ -46,8 +46,5 @@ void Mapper::update() {
         frm.get_mat(p);
         place_mat(frm.get_layout(), &p);
     }
-    cv::Mat tmp;
-    cv::resize(fb, tmp, cv::Size(100, 100), 30, 30, cv::INTER_NEAREST);
-    cv::imshow("prev", tmp);
-    cv::waitKey(100);
+
 }
