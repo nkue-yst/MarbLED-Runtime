@@ -34,7 +34,7 @@ void Mapper::place_mat(cv::Point2i p, const cv::Mat *src) {
     for(int i = 0; i < src->cols; i++){
         for(int j = 0; j < src->rows; j++){
             if( p.x + i > fb.cols | p.y + j > fb.rows) continue;
-            fb.at<uint16_t>(p.y + j, p.x + i) = src->at<uint16_t>(j, i);
+            fb.at<uint16_t>(p.y + j, p.x + i) += src->at<uint16_t>(j, i);
         }
     }
 }
@@ -47,7 +47,7 @@ void Mapper::update() {
         place_mat(frm.get_layout(), &p);
     }
     cv::Mat tmp;
-    cv::resize(p, tmp, cv::Size(100, 100), 30, 30, cv::INTER_NEAREST);
+    cv::resize(fb, tmp, cv::Size(100, 100), 30, 30, cv::INTER_NEAREST);
     cv::imshow("prev", tmp);
     cv::waitKey(100);
 }
