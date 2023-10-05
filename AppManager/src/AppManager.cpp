@@ -62,7 +62,8 @@ namespace tll
     {
         init(64, 32, "HUB75");
 
-        //this->loadApps();
+        this->loadApps();
+	this->switchApp("Rain");
 
         while (loop())
         {

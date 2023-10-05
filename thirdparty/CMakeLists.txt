@@ -56,3 +56,7 @@ add_subdirectory(cppzmq)
 
 include_directories(libzmq/include)
 include_directories(cppzmq)
+
+### Setup libsqlite3 ###
+add_subdirectory(libsqlite3)
+

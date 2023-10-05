@@ -10,3 +10,6 @@
 [submodule "thirdparty/cppzmq"]
 	path = thirdparty/cppzmq
 	url = https://github.com/zeromq/cppzmq.git
+[submodule "thirdparty/libsqlite3"]
+	path = thirdparty/libsqlite3
+	url = https://github.com/LuaDist/libsqlite3.git
