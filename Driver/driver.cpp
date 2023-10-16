@@ -17,17 +17,17 @@
 #endif
 
 #include "serial.h"
+#include "board.h"
+#include "utility.h"
 #include "zmq.hpp"
 #include "zmq_addon.hpp"
-
-#define     BUFFER_MAX       10
 
 typedef std::vector<std::vector<uint16_t>> f_img;
 
 std::queue<f_img> sensor_queue;
 bool exit_flg = false;
 
-struct board{
+struct controller{
     const char *serial;
     uint8_t version;
     uint8_t chain;
@@ -35,16 +35,6 @@ struct board{
     uint8_t modes;
 };
 
-struct container{
-    char serial[256];
-    uint16_t id;
-    uint16_t controller_id;
-    uint8_t version;
-    uint8_t chain_num;
-    uint8_t modes;
-    int32_t layout_x;
-    int32_t layout_y;
-};
 
 #if !defined(NO_BOARD)
 const char *get_serial_num(const char *name){
@@ -54,57 +44,32 @@ const char *get_serial_num(const char *name){
 }
 #endif
 
-int get_board_ids(zmq::context_t *ctx, const char *conn_addr, board *brd, std::map<unsigned int, unsigned int> *ids){
-    printf("Getting ID from storage.\n");
 
-    // prepare publisher
-    zmq::socket_t req(*ctx, zmq::socket_type::req);
-    req.connect(conn_addr);
+/**
+ * 基板IDをStorageノードから取得する
+ * @param ctx           zmq context
+ * @param conn_addr     Storage ノードのアドレス (e.g. tcp://127.0.0.1:8000)
+ * @param brd           基板情報
+ * @param ids           idリスト
+ * @return
+ */
+void get_board_ids(const char *conn_addr, const char *serial, unsigned int chain, std::vector<unsigned int> *ids){
 
-    printf("connected.\n");
-
-    std::vector<zmq::message_t> recv_msgs;
-
-    for(int i = 0; i < brd->chain; i++){
-        recv_msgs.clear();
-
-        container rqc{};
-        strcpy(rqc.serial, brd->serial);
-        rqc.chain_num = i;
-        rqc.version = brd->version;
-        rqc.modes = brd->modes;
-
-        req.send(zmq::buffer("STORAGE REQ_BRDIDS"), zmq::send_flags::sndmore);
-        req.send(zmq::buffer(&rqc, sizeof(rqc)), zmq::send_flags::none);
-
-        zmq::recv_multipart(req, std::back_inserter(recv_msgs));
-        if(recv_msgs.empty()) {
-            std::cout << "timeout" << std::endl;
-            continue;
-        }
-        if(recv_msgs.size() != 2) continue;
-
-        recv_msgs.erase(recv_msgs.begin());
-
-        container rc = *recv_msgs.at(0).data<container>();
-        ids->insert(std::make_pair(i, rc.id));
-
-        printf("CHAIN NUM[%d] = ID %d\n", i, rc.id);
-
+    for(int i = 0; i < chain; i++){
+        ids->push_back( get_board_id(conn_addr, serial, i) );
     }
 
-    req.close();
-    return 0;
 }
 
 
 // BRD_DATA [Serial-Number] [chain] [chain-num] [Mode] [Sensor-Data...]
-void publish_data(zmq::context_t *ctx, board *brd, const char *bind_addr, const std::map<unsigned int, unsigned int> *ids){
+void publish_data(controller *brd, const char *bind_addr, const std::map<unsigned int, unsigned int> *ids){
     printf("launch publisher\n");
 
 
     // prepare publisher
-    zmq::socket_t publisher(*ctx, zmq::socket_type::pub);
+    zmq::context_t ctx(1);
+    zmq::socket_t publisher(ctx, zmq::socket_type::pub);
     publisher.connect(bind_addr);
 
     printf("pub bind\n");
@@ -145,16 +110,9 @@ void publish_data(zmq::context_t *ctx, board *brd, const char *bind_addr, const 
     }
 }
 
-void store_buffer(const f_img& frm){
-    // block when fifo buffer is max
-    while(sensor_queue.size() >= BUFFER_MAX){
-        std::cerr << "buffer is max" << std::endl;
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-    sensor_queue.push(frm);
-}
 
-void receive_data(serial *ser, board *brd){
+
+void receive_data(serial *ser, controller *brd){
     std::vector<tm_packet> pacs = std::vector<tm_packet>();
     f_img frame(brd->modes * brd->chain, std::vector<uint16_t>(brd->sensors));
 
@@ -171,13 +129,13 @@ void receive_data(serial *ser, board *brd){
 
             frame.at(pac.mode).at(pac.s_num) = pac.value;
 
-            if(pac.s_num == brd->sensors -1 && pac.mode == brd->modes -1) store_buffer(frame);
+            if(pac.s_num == brd->sensors -1 && pac.mode == brd->modes -1) store_buffer(frame, sensor_queue);
         }
     }
 
 }
 
-void push_dummy(board *brd){
+void push_dummy(controller *brd){
     std::vector<tm_packet> pacs = std::vector<tm_packet>();
     f_img frame(brd->modes * brd->chain, std::vector<uint16_t>(brd->sensors));
     for(auto &f : frame){
@@ -186,13 +144,52 @@ void push_dummy(board *brd){
 
     while(!exit_flg) {
 
-        store_buffer(frame);
+        store_buffer(frame, sensor_queue);
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     }
 }
 
-void get_board_info(serial *ser, board *brd){
+void subscribe_color(controller *brd, const char *addr, unsigned int bid, std::queue<f_color> fc){
+
+    // init subscriber
+    zmq::context_t ctx(2);
+    zmq::socket_t subscriber(ctx, zmq::socket_type::sub);
+    subscriber.connect(addr);
+
+    // filter message
+    char filter_string[256] = {};
+    snprintf(filter_string, 256, "BRD_COLOR %d", bid);
+
+    subscriber.set(zmq::sockopt::subscribe, filter_string);
+    std::vector<zmq::message_t> recv_msgs;
+
+    std::cout << "bind on " << addr << std::endl;
+
+    while(true){
+        recv_msgs.clear();
+
+        zmq::recv_multipart(subscriber, std::back_inserter(recv_msgs));
+        if(recv_msgs.empty()) {
+            std::cout << "timeout" << std::endl;
+            continue;
+        }
+        if(recv_msgs.size() != 4) continue;
+
+        int bid, chain, c_num, mode;
+        int ret = sscanf(recv_msgs.at(0).data<char>(), "BRD_DATA %d %d %d %d",
+                         &bid,
+                         &chain,
+                         &c_num,
+                         &mode);
+        if(ret == EOF) continue; //fail to decode
+
+        unsigned long d_size = recv_msgs.at(1).size() / sizeof(uint16_t);
+        update_frames(bid, mode, recv_msgs.at(1).data<uint16_t>(), d_size, frames);
+    }
+}
+
+void get_board_info(serial *ser, controller *brd){
     std::vector<tm_packet> pacs = std::vector<tm_packet>();
     tm_packet info_pac = {};
     bool ret;
@@ -216,9 +213,9 @@ void get_board_info(serial *ser, board *brd){
     brd->sensors = info_pac.value & 0xff;
 }
 
-void launch(zmq::context_t *ctx, serial *ser, board *brd, const char *bind_addr, const std::map<unsigned int, unsigned int> *ids){
+void launch(Bucket *ser, const char *bind_addr, const std::vector<Board> *brds){
 
-    std::future<void> pub_data_th = std::async(std::launch::async, publish_data, ctx, brd, bind_addr, ids);
+    std::future<void> pub_data_th = std::async(std::launch::async, publish_data, brd, bind_addr, ids);
 #if !defined(NO_BOARD)
     std::future<void> pico_th = std::async(std::launch::async, receive_data, ser, brd);
 #else
@@ -239,7 +236,7 @@ void run(const char* port, const char* bind_addr, const char* info_addr, int mod
 
     // init vars
     serial ser(port, B115200);
-    board brd = {};
+    controller c = {};
     char name[256];
     sscanf(port, "/dev/%s", name);
 
@@ -251,30 +248,35 @@ void run(const char* port, const char* bind_addr, const char* info_addr, int mod
     printf("Waiting for board data...\n");
 
     // wait for board-info from serial-connection
-    get_board_info(&ser, &brd);
-    brd.modes = modes;
-    brd.serial = get_serial_num(name);
+    get_board_info(&ser, &c);
+    c.modes = modes;
+    c.serial = get_serial_num(name);
 #else
     printf("Test Mode Enabled.\n");
-    brd.version = 4;
-    brd.chain = 2;
-    brd.modes = modes;
-    brd.sensors = 18;
-    brd.serial = "board_is_not_connected";
+    c.version = 4;
+    c.chain = 2;
+    c.modes = modes;
+    c.sensors = 18;
+    c.serial = "board_is_not_connected";
 #endif
 
-    printf("SERIAL_NUM  : %s\n", brd.serial);
-    printf("BOARD_VER   : %d\n", brd.version);
-    printf("BOARD_CHAIN : %d\n", brd.chain);
-    printf("SENSORS     : %d\n", brd.sensors);
-
-    zmq::context_t ctx(1);
+    printf("SERIAL_NUM       : %s\n", c.serial);
+    printf("CONTROLLER_VER   : %d\n", c.version);
+    printf("BOARD_CHAIN      : %d\n", c.chain);
+    printf("SENSORS          : %d\n", c.sensors);
 
     // get board ids
-    std::map<unsigned int, unsigned int> ids{};
-    get_board_ids(&ctx, info_addr, &brd, &ids);
+    std::vector<unsigned int> ids{};
+    get_board_ids(info_addr, c.serial,  c.chain, &ids);
 
-    launch(&ctx, &ser, &brd, bind_addr, &ids);
+    // create board instance
+    std::vector<Board> brds;
+    for(unsigned int id : ids){
+        brds.emplace_back(id, c.sensors, c.modes);
+    }
+
+    // launch
+    launch(ser, bind_addr,  &ids);
 
     ser.close();
 }

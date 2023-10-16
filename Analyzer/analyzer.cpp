@@ -14,6 +14,9 @@
 #include "mapper.h"
 
 
+bool running = false;
+void run(const char *addr, const char *storage_addr, const char *com_addr);
+
 void get_connected_boards(const char *addr, std::vector<board> *brds) {
     zmq::context_t ctx(1);
     zmq::socket_t req(ctx, zmq::socket_type::req);
@@ -58,7 +61,7 @@ void subscribe_data(std::vector<frame> *frames, const char *addr){
 
     std::cout << "bind on " << addr << std::endl;
 
-    while(true){
+    while(running){
         recv_msgs.clear();
 
         zmq::recv_multipart(subscriber, std::back_inserter(recv_msgs));
@@ -88,7 +91,7 @@ void command_handling(std::vector<frame> *frames, const char *addr){
 
     std::vector<zmq::message_t> recv_msgs;
 
-    while(1){
+    while(running){
         recv_msgs.clear();
 
         zmq::recv_multipart(subscriber, std::back_inserter(recv_msgs));
@@ -117,6 +120,7 @@ void command_handling(std::vector<frame> *frames, const char *addr){
             }
 
         }else if(strcmp(command, "RELOAD") == 0){
+            running = false;
 
         }
 
@@ -126,21 +130,26 @@ void command_handling(std::vector<frame> *frames, const char *addr){
 
 
 void update(Mapper *me){
-    while(true){
+    while(running){
         me->update();
     }
 }
 
 
-void launch(std::vector<frame> *frms, const char *addr, Mapper *mapper){
+void launch(std::vector<frame> *frms, const char *addr, const char *cm_addr, Mapper *mapper){
+    running = true;
+
     std::future<void> recv_meta = std::async(std::launch::async, subscribe_data, frms, addr);
     std::future<void> img_update = std::async(std::launch::async, update, mapper);
+    std::future<void> handing = std::async(std::launch::async, command_handling, frms, cm_addr);
     recv_meta.wait();
     img_update.wait();
+    handing.wait();
+
 }
 
 
-void run(const char *addr, const char *storage_addr){
+void run(const char *addr, const char *storage_addr, const char *com_addr){
 
     std::cout << "Getting board data..." << std::endl;
 
@@ -165,18 +174,20 @@ void run(const char *addr, const char *storage_addr){
 
     Mapper mapper(&frms);
 
-    launch(&frms, addr, &mapper);
+    launch(&frms, addr, com_addr, &mapper);
+
 }
 
 int main(int argc, char* argv[]){
 
     int c;
-    const char* optstring = "d:b:";
+    const char* optstring = "d:b:i:";
 
     // enable error log from getopt
     opterr = 0;
 
     // bind address
+    char* com_addr = nullptr;
     char* bind_addr = nullptr;
     char* storage_addr = nullptr;
 
@@ -186,6 +197,8 @@ int main(int argc, char* argv[]){
             storage_addr = optarg;
         }else if(c == 'b'){
             bind_addr = optarg;
+        }else if(c == 'i') {
+            com_addr = optarg;
         }else{
             // parse error
             printf("unknown argument error\n");
@@ -203,8 +216,13 @@ int main(int argc, char* argv[]){
         printf("require bind address option");
         return -2;
     }
+    // check for com address
+    if(com_addr == nullptr){
+        printf("require command address option");
+        return -2;
+    }
 
-    run(bind_addr, storage_addr);
+    run(bind_addr, storage_addr, com_addr);
 
     return 0;
 }
