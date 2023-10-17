@@ -22,8 +22,8 @@ typedef std::vector<std::vector<uint8_t>> f_color;
 typedef std::vector<std::vector<uint16_t>> f_img;
 
 class Board {
-private:
 
+private:
     unsigned int id;
     uint8_t sensors;
     uint8_t modes;
@@ -31,12 +31,17 @@ private:
     std::queue<f_color> color_queue;
     std::queue<f_img> data_queue;
 
+    template<typename T>
+    static void store_buffer(const T& frm, std::queue<T>& q);
+
 public:
 
     Board(unsigned int id, uint8_t sensors, uint8_t modes);
-
-    template<typename T>
-    static void store_buffer(const T& frm, std::queue<T>& q);
+    unsigned int get_id();
+    uint8_t get_sensors();
+    uint8_t get_modes();
+    void store_sensor(const f_img *src);
+    void store_color(const f_color *src);
 
 };
 

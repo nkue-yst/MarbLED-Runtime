@@ -112,7 +112,7 @@ void publish_data(controller *brd, const char *bind_addr, const std::map<unsigne
 
 
 
-void receive_data(serial *ser, controller *brd){
+void receive_data(serial *ser, std::vector<Board> *brds){
     std::vector<tm_packet> pacs = std::vector<tm_packet>();
     f_img frame(brd->modes * brd->chain, std::vector<uint16_t>(brd->sensors));
 
@@ -135,16 +135,19 @@ void receive_data(serial *ser, controller *brd){
 
 }
 
-void push_dummy(controller *brd){
-    std::vector<tm_packet> pacs = std::vector<tm_packet>();
-    f_img frame(brd->modes * brd->chain, std::vector<uint16_t>(brd->sensors));
-    for(auto &f : frame){
-        std::fill(f.begin(), f.end(), 0xffff);
-    }
+void push_dummy(std::vector<Board> *brds){
 
     while(!exit_flg) {
+        for(auto &b : *brds){
 
-        store_buffer(frame, sensor_queue);
+            f_img frame(b.get_modes(), std::vector<uint16_t>(b.get_sensors()));
+            for(auto &f : frame){
+                std::fill(f.begin(), f.end(), 0xffff);
+            }
+            b.store_sensor(&frame);
+
+        }
+
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     }
@@ -215,10 +218,12 @@ void get_board_info(serial *ser, controller *brd){
 
 void launch(Bucket *ser, const char *bind_addr, const std::vector<Board> *brds){
 
-    std::future<void> pub_data_th = std::async(std::launch::async, publish_data, brd, bind_addr, ids);
+    // data publish
+    std::future<void> pub_data_th = std::async(std::launch::async, publish_data, bind_addr, brds);
 #if !defined(NO_BOARD)
     std::future<void> pico_th = std::async(std::launch::async, receive_data, ser, brd);
 #else
+    // dummy data store to queue
     std::future<void> pico_th = std::async(std::launch::async, push_dummy, brd);
 #endif
 
@@ -276,9 +281,10 @@ void run(const char* port, const char* bind_addr, const char* info_addr, int mod
     }
 
     // launch
-    launch(ser, bind_addr,  &ids);
+    launch(&ser, bind_addr,  &brds);
 
     ser.close();
+
 }
 
 int main(int argc, char* argv[]){
