@@ -62,8 +62,8 @@ void get_board_ids(const char *conn_addr, const char *serial, unsigned int chain
 }
 
 
-// BRD_DATA [Serial-Number] [chain] [chain-num] [Mode] [Sensor-Data...]
-void publish_data(controller *brd, const char *bind_addr, const std::map<unsigned int, unsigned int> *ids){
+// BRD_DATA [Board-Id] [Mode] [Sensor-Data...]
+void publish_data(const char *bind_addr, std::vector<Board> *brds){
     printf("launch publisher\n");
 
 
@@ -81,32 +81,25 @@ void publish_data(controller *brd, const char *bind_addr, const std::map<unsigne
 
     while(!exit_flg){
 
-        // retry when fifo is empty
-        if(sensor_queue.empty()){
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            continue;
-        }
+        for(auto &brd : *brds){
+            int ret = brd.pop_sensor_values(&frame);
+            if(ret != 0) continue;
 
-        // get from fifo buffer
-        frame = sensor_queue.front();
-        sensor_queue.pop();
+            // publish via zmq socket
+            for(int i = 0; i < frame.size(); i++){
 
-        // publish via zmq socket
-        for(int i = 0; i < frame.size(); i++){
+                std::snprintf(head, 128, "BRD_DATA %d %d",
+                              brd.get_id(),
+                              i
+                );
 
-            int chain_num = (int)std::floor(i / brd->modes);
+                publisher.send(zmq::buffer(head), zmq::send_flags::sndmore);
+                publisher.send(zmq::buffer(frame.at(i)), zmq::send_flags::none);
 
-            std::snprintf(head, 128, "BRD_DATA %d %d %d %d",
-                          ids->at(chain_num),
-                          brd->chain,
-                          chain_num,
-                          i % brd->modes
-                          );
-
-            publisher.send(zmq::buffer(head), zmq::send_flags::sndmore);
-            publisher.send(zmq::buffer(frame.at(i)), zmq::send_flags::none);
+            }
 
         }
+
     }
 }
 
@@ -114,7 +107,7 @@ void publish_data(controller *brd, const char *bind_addr, const std::map<unsigne
 
 void receive_data(serial *ser, std::vector<Board> *brds){
     std::vector<tm_packet> pacs = std::vector<tm_packet>();
-    f_img frame(brd->modes * brd->chain, std::vector<uint16_t>(brd->sensors));
+    f_img frame(brds->at(0).get_modes(), std::vector<uint16_t>(brds->at(0).get_sensors()));
 
     bool ret;
 
@@ -153,7 +146,7 @@ void push_dummy(std::vector<Board> *brds){
     }
 }
 
-void subscribe_color(controller *brd, const char *addr, unsigned int bid, std::queue<f_color> fc){
+void subscribe_color(const char *addr, Board *brd){
 
     // init subscriber
     zmq::context_t ctx(2);
@@ -162,12 +155,13 @@ void subscribe_color(controller *brd, const char *addr, unsigned int bid, std::q
 
     // filter message
     char filter_string[256] = {};
-    snprintf(filter_string, 256, "BRD_COLOR %d", bid);
+    snprintf(filter_string, 256, "BRD_COLOR %d", brd->get_id());
 
     subscriber.set(zmq::sockopt::subscribe, filter_string);
     std::vector<zmq::message_t> recv_msgs;
+    f_color fc(3, std::vector<uint8_t>(brd->get_sensors()));
 
-    std::cout << "bind on " << addr << std::endl;
+    std::cout << "ID : " << brd->get_id() << " color is connected on " << addr << std::endl;
 
     while(true){
         recv_msgs.clear();
@@ -179,16 +173,23 @@ void subscribe_color(controller *brd, const char *addr, unsigned int bid, std::q
         }
         if(recv_msgs.size() != 4) continue;
 
-        int bid, chain, c_num, mode;
-        int ret = sscanf(recv_msgs.at(0).data<char>(), "BRD_DATA %d %d %d %d",
-                         &bid,
-                         &chain,
-                         &c_num,
-                         &mode);
+        int bid;
+        int ret = sscanf(recv_msgs.at(0).data<char>(), "BRD_COLOR %d",
+                         &bid);
         if(ret == EOF) continue; //fail to decode
 
-        unsigned long d_size = recv_msgs.at(1).size() / sizeof(uint16_t);
-        update_frames(bid, mode, recv_msgs.at(1).data<uint16_t>(), d_size, frames);
+        unsigned long d_size_r = recv_msgs.at(1).size() / sizeof(uint8_t);
+        unsigned long d_size_g = recv_msgs.at(2).size() / sizeof(uint8_t);
+        unsigned long d_size_b = recv_msgs.at(3).size() / sizeof(uint8_t);
+
+        if(d_size_b != d_size_r || d_size_b != d_size_g){
+            std::cerr << "invalid data size (color) bid=" << brd->get_id() << std::endl;
+            continue;
+        }
+
+        for(int i = 0; i < d_size_r; i++){
+
+        }
     }
 }
 
@@ -216,7 +217,7 @@ void get_board_info(serial *ser, controller *brd){
     brd->sensors = info_pac.value & 0xff;
 }
 
-void launch(Bucket *ser, const char *bind_addr, const std::vector<Board> *brds){
+void launch(Bucket *ser, const char *bind_addr, const char *color_addr, const std::vector<Board> *brds){
 
     // data publish
     std::future<void> pub_data_th = std::async(std::launch::async, publish_data, bind_addr, brds);
@@ -231,7 +232,8 @@ void launch(Bucket *ser, const char *bind_addr, const std::vector<Board> *brds){
     pico_th.wait();
 }
 
-void run(const char* port, const char* bind_addr, const char* info_addr, int modes){
+void run(const char* port, const char* bind_addr, const char* info_addr, const char* color_addr){
+    int modes = 5;
 
     // print options
     printf("TM SERIAL PORT      : %s\n", port);
@@ -281,7 +283,7 @@ void run(const char* port, const char* bind_addr, const char* info_addr, int mod
     }
 
     // launch
-    launch(&ser, bind_addr,  &brds);
+    launch(&ser, bind_addr, color_addr, &brds);
 
     ser.close();
 
@@ -290,19 +292,19 @@ void run(const char* port, const char* bind_addr, const char* info_addr, int mod
 int main(int argc, char* argv[]){
 
     int c;
-    const char* optstring = "t:p:b:i:";
+    const char* optstring = "t:p:b:i:c:";
 
     // enable error log from getopt
     opterr = 0;
 
-    // sensing modes
-    int s_modes = 5;
     // serial port
     char* ser_p = nullptr;
     // bind address
     char* bind_addr = nullptr;
     // connect address for publishing meta-data
     char* info_addr = nullptr;
+    // connect address for subscribe color-data
+    char* color_addr = nullptr;
 
     // get options
     while((c = getopt(argc, argv, optstring)) != -1){
@@ -312,6 +314,8 @@ int main(int argc, char* argv[]){
             bind_addr = optarg;
         }else if(c == 'i') {
             info_addr = optarg;
+        }else if(c == 'c'){
+            color_addr = optarg;
         }else{
             // parse error
             printf("unknown argument error\n");
@@ -334,8 +338,13 @@ int main(int argc, char* argv[]){
         printf("require storage address option -i");
         return -3;
     }
+    // check for bind address
+    if(color_addr == nullptr){
+        printf("require color address option -c");
+        return -3;
+    }
 
-    run(ser_p, bind_addr, info_addr, s_modes);
+    run(ser_p, bind_addr, info_addr, color_addr);
 
     return 0;
 }

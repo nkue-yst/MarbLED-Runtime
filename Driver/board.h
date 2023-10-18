@@ -33,6 +33,8 @@ private:
 
     template<typename T>
     static void store_buffer(const T& frm, std::queue<T>& q);
+    template<typename T>
+    static int pop_buffer(T& frm, std::queue<T>& q);
 
 public:
 
@@ -40,6 +42,8 @@ public:
     unsigned int get_id();
     uint8_t get_sensors();
     uint8_t get_modes();
+    int pop_sensor_values(f_img *dst);
+    int pop_color_values(f_color *dst);
     void store_sensor(const f_img *src);
     void store_color(const f_color *src);
 

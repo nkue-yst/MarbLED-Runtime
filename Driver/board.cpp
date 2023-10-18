@@ -21,6 +21,21 @@ void Board::store_buffer(const T& frm, std::queue<T>& q){
     q.push(frm);
 }
 
+template <typename T>
+int Board::pop_buffer(T &frm, std::queue<T> &q) {
+    // retry when fifo is empty
+    if(q.empty()){
+        return -1;
+    }
+
+    // get from fifo buffer
+    T frame = q.front();
+    q.pop();
+
+    std::copy(frame.begin(), frame.end(),frm.begin());
+    return 0;
+}
+
 unsigned int Board::get_id() {
     return this->id;
 }
@@ -31,6 +46,16 @@ uint8_t Board::get_sensors() {
 
 uint8_t Board::get_modes() {
     return this->modes;
+}
+
+int Board::pop_sensor_values(f_img *dst) {
+    int ret = pop_buffer(*dst, data_queue);
+    return ret;
+}
+
+int Board::pop_color_values(f_color *dst) {
+    int ret = pop_buffer(*dst, color_queue);
+    return ret;
 }
 
 void Board::store_sensor(const f_img *src) {
