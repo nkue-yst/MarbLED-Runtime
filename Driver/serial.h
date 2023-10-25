@@ -14,10 +14,6 @@
 #define SLIP_ESC_ESC    0xDD
 
 
-static void printPacket(const tm_packet *pac){
-    printf("num: %d mode: %d data: %d\n", pac->s_num, pac->mode, pac->value);
-}
-
 class serial : public Bucket {
 private:
     unsigned char buf[1024];
@@ -34,6 +30,7 @@ public:
     serial(const char *file, int baudRate);
     int tm_open() override;
     int read(std::vector<tm_packet> *pacs) override;
+    void transfer(const uint8_t *color, size_t len) override;
     void close() const override;
     ~serial();
 

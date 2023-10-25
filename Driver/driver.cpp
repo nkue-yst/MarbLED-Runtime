@@ -105,24 +105,27 @@ void publish_data(const char *bind_addr, std::vector<Board> *brds){
 
 
 
-void receive_data(serial *ser, std::vector<Board> *brds){
+void receive_data(Bucket *ser, std::vector<Board> *brds){
     std::vector<tm_packet> pacs = std::vector<tm_packet>();
-    f_img frame(brds->at(0).get_modes(), std::vector<uint16_t>(brds->at(0).get_sensors()));
 
     bool ret;
+    int data_per_board = brds->at(0).get_sensors() * brds->at(0).get_modes();
+    int sensors = brds->at(0).get_sensors();
+    int modes = brds->at(0).get_modes();
+
+    f_img frame(brds->at(0).get_modes(), std::vector<uint16_t>(brds->at(0).get_sensors()));
 
     while(!exit_flg) {
         ret = ser->read(&pacs);
         if(ret == 0)continue;
 
         for(tm_packet pac : pacs){
+            int brd = floor(pac.d_num / data_per_board);
+            int sensor = pac.d_num % sensors;
+            int mode = pac.d_num % modes;
 
-            // detect error
-            if(pac.s_num >= brd->sensors || pac.mode >= brd->modes) continue;
-
-            frame.at(pac.mode).at(pac.s_num) = pac.value;
-
-            if(pac.s_num == brd->sensors -1 && pac.mode == brd->modes -1) store_buffer(frame, sensor_queue);
+            frame.at(mode).at(sensor) = pac.value;
+            if(mode == modes -1 && sensor == sensors - 1) brds->at(brd).store_sensor(&frame);
         }
     }
 
@@ -143,6 +146,79 @@ void push_dummy(std::vector<Board> *brds){
 
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
+    }
+}
+
+void write_color(Bucket *ser, std::vector<Board> *brds){
+    uint8_t buf[2048] = {};
+    uint8_t r[18][18] = {};
+    uint8_t g[18][18] = {};
+    uint8_t b[18][18] = {};
+    unsigned int ignore_pix[36] = {
+            19, 22, 25, 28, 31, 34,
+            73, 76, 79, 82, 85, 88,
+            127, 130, 133, 136, 139, 142,
+            181, 184, 187, 190, 193, 196,
+            235, 238, 241, 243, 246, 249,
+            289, 292, 295,298, 301, 304,
+    };
+
+    while(true) {
+        int cnt = 0;
+        for (auto &brd: *brds) {
+
+            f_color c(3, std::vector<uint8_t>(18 * 18));
+
+            int ret = brd.pop_color_values(&c);
+            if(ret < 0){
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                continue;
+            }
+
+            if (c.size() != 3) continue;
+
+            // Reverse odd rows
+            for (int i = 0; i < c.at(0).size(); i++) {
+
+                int row = (int) floor(i / 18.0);
+                int col = i % 18;
+                int pol = row % 2;
+
+                if (pol) col = 17 - col;
+                r[row][col] = c.at(0).at(i);
+                g[row][col] = c.at(1).at(i);
+                b[row][col] = c.at(2).at(i);
+
+            }
+
+            // Ignore pixel values corresponding to sensor positions
+            int pix_cnt = 0;
+            for (int i = 0; i < 18; i++) {
+                for (int j = 0; j < 18; j++) {
+
+                    // check ignore pixels
+                    bool ignore = false;
+                    for (unsigned int p: ignore_pix) {
+                        if (p == pix_cnt) {
+                            ignore = true;
+                            break;
+                        }
+                    }
+                    pix_cnt++;
+
+                    if (ignore) continue;
+
+                    buf[cnt] = r[i][j];
+                    cnt++;
+                    buf[cnt] = g[i][j];
+                    cnt++;
+                    buf[cnt] = b[i][j];
+                    cnt++;
+                }
+            }
+        }
+        if(cnt == 0)
+        ser->transfer(buf, cnt);
     }
 }
 
@@ -187,9 +263,13 @@ void subscribe_color(const char *addr, Board *brd){
             continue;
         }
 
+        f_color c(3, std::vector<uint8_t>(18 * 18));
         for(int i = 0; i < d_size_r; i++){
-
+            c.at(0).at(i) = recv_msgs.at(1).data<uint8_t>()[i];
+            c.at(1).at(i) = recv_msgs.at(2).data<uint8_t>()[i];
+            c.at(2).at(i) = recv_msgs.at(3).data<uint8_t>()[i];
         }
+        brd->store_color(&c);
     }
 }
 
@@ -204,7 +284,7 @@ void get_board_info(serial *ser, controller *brd){
         if(!ret) continue;
 
         for(tm_packet pac: pacs){
-            if(pac.s_num == 0xff){
+            if(((pac.d_num >> 8) & 0xff) == 0xff){
                 info_pac = pac;
                 endflg = true;
                 break;
@@ -212,17 +292,22 @@ void get_board_info(serial *ser, controller *brd){
         }
     }
 
-    brd->version = info_pac.mode;
+    brd->version = info_pac.d_num & 0xff;
     brd->chain = (info_pac.value >> 8) & 0xff;
     brd->sensors = info_pac.value & 0xff;
 }
 
-void launch(Bucket *ser, const char *bind_addr, const char *color_addr, const std::vector<Board> *brds){
+void launch(Bucket *ser, const char *bind_addr, const char *color_addr, std::vector<Board> *brds){
 
     // data publish
     std::future<void> pub_data_th = std::async(std::launch::async, publish_data, bind_addr, brds);
 #if !defined(NO_BOARD)
-    std::future<void> pico_th = std::async(std::launch::async, receive_data, ser, brd);
+    std::future<void> pico_th = std::async(std::launch::async, receive_data, ser, brds);
+    std::future<void> write_th = std::async(std::launch::async, write_color, ser, brds);
+    std::vector<std::future<void>> sub_color_ths;
+    for(auto &brd: *brds){
+        sub_color_ths.emplace_back(std::async(std::launch::async, subscribe_color, color_addr, &brd));
+    }
 #else
     // dummy data store to queue
     std::future<void> pico_th = std::async(std::launch::async, push_dummy, brd);
@@ -230,6 +315,10 @@ void launch(Bucket *ser, const char *bind_addr, const char *color_addr, const st
 
     pub_data_th.wait();
     pico_th.wait();
+    write_th.wait();
+    for(auto &sct : sub_color_ths) {
+        sct.wait();
+    }
 }
 
 void run(const char* port, const char* bind_addr, const char* info_addr, const char* color_addr){

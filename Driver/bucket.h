@@ -9,8 +9,7 @@
 #include <vector>
 
 struct tm_packet{
-    uint8_t s_num;
-    uint8_t mode;
+    uint16_t d_num;
     uint16_t value;
 };
 
@@ -18,6 +17,7 @@ class Bucket {
 public:
     virtual int tm_open(){};
     virtual int read(std::vector<tm_packet> *pacs){};
+    virtual void transfer(const uint8_t *color, size_t len){};
     virtual void close() const{};
 };
 

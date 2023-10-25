@@ -7,9 +7,9 @@ find_package(Threads REQUIRED)
 
 add_executable(driver driver.cpp serial.cpp board.cpp)
 
-add_compile_definitions(driver NO_BOARD)
+# add_compile_definitions(driver NO_BOARD)
 
-target_link_libraries(driver cppzmq)
+target_link_libraries(driver cppzmq udev)
 if (!NO_BOARD)
     target_link_libraries(driver udev)
 endif (!NO_BOARD)
