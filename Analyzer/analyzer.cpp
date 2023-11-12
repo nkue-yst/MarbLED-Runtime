@@ -45,11 +45,9 @@ void subscribe_data(std::vector<frame> *frames, const char *addr){
         }
         if(recv_msgs.size() != 2) continue;
 
-        int bid, chain, c_num, mode;
-        int ret = sscanf(recv_msgs.at(0).data<char>(), "BRD_DATA %d %d %d %d",
+        int bid, mode;
+        int ret = sscanf(recv_msgs.at(0).data<char>(), "BRD_DATA %d %d",
                          &bid,
-                         &chain,
-                         &c_num,
                          &mode);
         if(ret == EOF) continue; //fail to decode
 

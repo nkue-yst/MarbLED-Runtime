@@ -36,6 +36,7 @@ int Eth::tm_open(){
 int Eth::read(std::vector<tm_packet> *pacs){
     if(eth_mode == SOCK_DGRAM) return -1; // Sensor data can only be received via TCP connection.
 
+    pacs->clear();
     uint16_t data[1024] = {};
     ssize_t ret = recv(sock_fd, data, expected_len, 0);
     if(ret < expected_len){
@@ -47,7 +48,7 @@ int Eth::read(std::vector<tm_packet> *pacs){
         pacs->emplace_back(pac);
     }
 
-    return 0;
+    return (int)expected_len;
 }
 
 void Eth::transfer(const uint8_t *color, size_t len) {

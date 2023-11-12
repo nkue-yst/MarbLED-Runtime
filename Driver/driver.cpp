@@ -75,16 +75,17 @@ void publish_data(const char *bind_addr, std::vector<Board> *brds){
 
 
     char head[128];                                  // for data header
-    f_img frame;                                    // get from fifo buffer
 
 
     while(!exit_flg){
 
         for(auto &brd : *brds){
+            f_img frame(brd.get_modes(), std::vector<uint16_t>(brd.get_sensors()));
+
             int ret = brd.pop_sensor_values(&frame);
             if (ret < 0) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(5));
-                continue;  // データなければリトライ
+                continue;  //
             }
 
             // publish via zmq socket
