@@ -38,8 +38,8 @@ int Eth::read(std::vector<tm_packet> *pacs){
 
     pacs->clear();
     uint16_t data[1024] = {};
-    ssize_t ret = recv(sock_fd, data, expected_len, 0);
-    if(ret < expected_len){
+    ssize_t ret = recv(sock_fd, data, expected_len * 2, 0);
+    if(ret < expected_len * 2){
         return -1;
     }
 

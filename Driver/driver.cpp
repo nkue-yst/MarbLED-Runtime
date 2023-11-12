@@ -121,13 +121,15 @@ void receive_data(Bucket *ser, std::vector<Board> *brds){
     }
 
     std::vector<tm_packet> pacs = std::vector<tm_packet>();
+    std::vector<f_img> frames;
+    for(int i = 0; i < brds->size(); i++){
+        frames.emplace_back(brds->at(0).get_modes(), std::vector<uint16_t>(brds->at(0).get_sensors()));
+    }
 
     bool ret;
     int data_per_board = brds->at(0).get_sensors() * brds->at(0).get_modes();
     int sensors = brds->at(0).get_sensors();
     int modes = brds->at(0).get_modes();
-
-    f_img frame(brds->at(0).get_modes(), std::vector<uint16_t>(brds->at(0).get_sensors()));
 
     while(!exit_flg) {
         ret = ser->read(&pacs);
@@ -137,12 +139,15 @@ void receive_data(Bucket *ser, std::vector<Board> *brds){
         }
 
         for(tm_packet pac : pacs){
-            int brd = floor(pac.d_num / data_per_board);
+            int brd = pac.d_num / data_per_board;
             int sensor = pac.d_num % sensors;
             int mode = pac.d_num % modes;
 
-            frame.at(mode).at(sensor) = pac.value;
-            if(mode == modes -1 && sensor == sensors - 1) brds->at(brd).store_sensor(&frame);
+            frames.at(brd).at(mode).at(sensor) = pac.value;
+        }
+
+        for(int i = 0; i < brds->size(); i++){
+            brds->at(i).store_sensor(&frames.at(i));
         }
     }
 
