@@ -10,26 +10,16 @@
 #include "zmq.hpp"
 #include "zmq_addon.hpp"
 
+#include "utility.h"
+
 #include "resources/board_template.h"
 
 typedef std::vector<uint16_t> s_data;
 
-struct board{
-    char serial[256];
-    uint16_t id;
-    uint16_t controller_id;
-    uint8_t version;
-    uint8_t chain_num;
-    uint8_t modes;
-    int32_t layout_x;
-    int32_t layout_y;
-};
-
-
 class frame {
 
 private:
-    board brd_data{};           // board meta data
+    Container brd_data{};           // board meta data
     std::vector<s_data> buf;    // buffer of sensing data
     cv::Mat f_buf;              // buffer of mapped image
 
@@ -46,7 +36,7 @@ private:
     void calc_gain();
 
 public:
-    explicit frame(board brd);
+    explicit frame(Container brd);
 
     uint16_t get_id() const;
     cv::Point2i get_layout();

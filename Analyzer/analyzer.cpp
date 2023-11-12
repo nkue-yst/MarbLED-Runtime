@@ -12,37 +12,11 @@
 
 #include "frame.h"
 #include "mapper.h"
+#include "utility.h"
 
 
 bool running = false;
 void run(const char *addr, const char *storage_addr, const char *com_addr);
-
-void get_connected_boards(const char *addr, std::vector<board> *brds) {
-    zmq::context_t ctx(1);
-    zmq::socket_t req(ctx, zmq::socket_type::req);
-    req.connect(addr);
-
-    // build a message requesting a connected board
-    char request[128] = "STORAGE REQ_LAYOUT";
-
-    // send request
-    req.send(zmq::buffer(request), zmq::send_flags::none);
-
-    // wait for replies
-    std::vector<zmq::message_t> recv_msgs;
-    zmq::recv_multipart(req, std::back_inserter(recv_msgs));
-
-    // erase header ( STORAGE REPLY )
-    if(!recv_msgs.empty()) recv_msgs.erase(recv_msgs.begin());
-
-    req.close();
-
-    for(auto & recv_msg : recv_msgs) {
-        board c = *recv_msg.data<board>();
-        brds->push_back(c);
-    }
-
-}
 
 void update_frames(const uint16_t bid, const uint16_t mode, const uint16_t *data, const unsigned long len, std::vector<frame> *frames){
     for(auto & frame : *frames){
@@ -154,7 +128,7 @@ void run(const char *addr, const char *storage_addr, const char *com_addr){
     std::cout << "Getting board data..." << std::endl;
 
     // get board layout from storage
-    std::vector<board> brds;
+    std::vector<Container> brds;
     get_connected_boards(storage_addr, &brds);
 
     // check board count
@@ -221,7 +195,6 @@ int main(int argc, char* argv[]){
         printf("require command address option");
         return -2;
     }
-
     run(bind_addr, storage_addr, com_addr);
 
     return 0;

@@ -8,7 +8,7 @@
 #include "resources/sens_map_tm4.h"
 
 
-frame::frame(board brd) {
+frame::frame(Container brd) {
     brd_data = brd;
     Brd_Master bm = get_brd_master();
 
