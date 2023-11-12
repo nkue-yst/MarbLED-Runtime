@@ -4,6 +4,9 @@
 
 #include "board.h"
 
+std::map<unsigned int, brd_config> brd_master{
+        {4,{18, 288, 18, 18, 1}}
+};
 
 Board::Board(unsigned int id, uint8_t sensors, uint8_t modes) {
     this->id = id;
@@ -15,7 +18,7 @@ template<typename T>
 void Board::store_buffer(const T& frm, std::queue<T>& q){
     // block when fifo buffer is max
     while(q.size() >= BUFFER_MAX){
-        std::cerr << "buffer is max" << std::endl;
+        std::cerr << "buffer is max. I'm board no." << id << std::endl;
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     q.push(frm);
@@ -30,6 +33,7 @@ int Board::pop_buffer(T &frm, std::queue<T> &q) {
 
     // get from fifo buffer
     T frame = q.front();
+    //if(q.size() != 1) q.pop();
     q.pop();
 
     std::copy(frame.begin(), frame.end(),frm.begin());

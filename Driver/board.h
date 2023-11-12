@@ -2,6 +2,7 @@
 // Created by chihiro on 23/10/11.
 //
 
+
 #ifndef MARBLED_RUNTIME_BOARD_H
 #define MARBLED_RUNTIME_BOARD_H
 
@@ -21,6 +22,19 @@
 typedef std::vector<std::vector<uint8_t>> f_color;
 typedef std::vector<std::vector<uint16_t>> f_img;
 
+
+typedef struct{
+    int sensors;
+    int rgb_leds;
+    int rgb_width;
+    int rgb_height;
+    int modes;
+} brd_config;
+
+
+extern std::map<unsigned int, brd_config> brd_master;
+
+
 class Board {
 
 private:
@@ -32,7 +46,7 @@ private:
     std::queue<f_img> data_queue;
 
     template<typename T>
-    static void store_buffer(const T& frm, std::queue<T>& q);
+    void store_buffer(const T& frm, std::queue<T>& q);
     template<typename T>
     static int pop_buffer(T& frm, std::queue<T>& q);
 

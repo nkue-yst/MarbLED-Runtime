@@ -17,23 +17,18 @@
 #endif
 
 #include "serial.h"
+#include "eth.h"
 #include "board.h"
 #include "utility.h"
 #include "zmq.hpp"
 #include "zmq_addon.hpp"
 
+// connection types
+#define ETH_PORT_BASE   8002
+
 typedef std::vector<std::vector<uint16_t>> f_img;
 
-std::queue<f_img> sensor_queue;
 bool exit_flg = false;
-
-struct controller{
-    const char *serial;
-    uint8_t version;
-    uint8_t chain;
-    uint8_t sensors;
-    uint8_t modes;
-};
 
 
 #if !defined(NO_BOARD)
@@ -62,7 +57,11 @@ void get_board_ids(const char *conn_addr, const char *serial, unsigned int chain
 }
 
 
-// BRD_DATA [Board-Id] [Mode] [Sensor-Data...]
+/**
+ * センサーデータをpublish
+ * @param bind_addr     Analyzerノードのアドレス
+ * @param brds          Boardインスタンス群
+ */
 void publish_data(const char *bind_addr, std::vector<Board> *brds){
     printf("launch publisher\n");
 
@@ -83,7 +82,10 @@ void publish_data(const char *bind_addr, std::vector<Board> *brds){
 
         for(auto &brd : *brds){
             int ret = brd.pop_sensor_values(&frame);
-            if(ret != 0) continue;
+            if (ret < 0) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                continue;  // データなければリトライ
+            }
 
             // publish via zmq socket
             for(int i = 0; i < frame.size(); i++){
@@ -104,8 +106,19 @@ void publish_data(const char *bind_addr, std::vector<Board> *brds){
 }
 
 
-
+/**
+ * 基板からセンサーデータ取得
+ * @param ser   シリアル通信インスタンス
+ * @param brds  Boardインスタンス群
+ */
 void receive_data(Bucket *ser, std::vector<Board> *brds){
+
+    int sr = ser->tm_open();
+    if(sr < 0){
+        std::cerr << "socket open error [data receive]" << std::endl;
+        return;
+    }
+
     std::vector<tm_packet> pacs = std::vector<tm_packet>();
 
     bool ret;
@@ -117,7 +130,10 @@ void receive_data(Bucket *ser, std::vector<Board> *brds){
 
     while(!exit_flg) {
         ret = ser->read(&pacs);
-        if(ret == 0)continue;
+        if (ret == 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            continue;  // データなければリトライ
+        }
 
         for(tm_packet pac : pacs){
             int brd = floor(pac.d_num / data_per_board);
@@ -129,8 +145,14 @@ void receive_data(Bucket *ser, std::vector<Board> *brds){
         }
     }
 
+    ser->close();
 }
 
+
+/**
+ * ダミーデータ生成（テスト用）
+ * @param brds  Boardインスタンス群
+ */
 void push_dummy(std::vector<Board> *brds){
 
     while(!exit_flg) {
@@ -149,7 +171,30 @@ void push_dummy(std::vector<Board> *brds){
     }
 }
 
-void write_color(Bucket *ser, std::vector<Board> *brds){
+/**
+ * 基板に色情報を送信
+ * TODO: （基板に固有の処理すぎる）
+ * @param ser   シリアル通信インスタンス
+ * @param brds  Boardインスタンス群
+ */
+void write_color(const char *brd_addr, std::vector<Board> *brds){
+
+    std::map<unsigned int, Eth> soc_vec;
+    for(int i = 0; i < brds->size(); i++){
+        soc_vec.insert(
+                std::make_pair(
+                        brds->at(i).get_id(),
+                        Eth(brd_addr, ETH_PORT_BASE + i, ETH_CONN_UDP, brd_master[4].sensors * brd_master[4].modes)
+                        )
+                        );
+        int sr = soc_vec.at(brds->at(i).get_id()).tm_open();
+        if(sr < 0){
+            std::cerr << "socket open error [color write]" << std::endl;
+            return;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
     uint8_t buf[2048] = {};
     uint8_t r[18][18] = {};
     uint8_t g[18][18] = {};
@@ -163,16 +208,18 @@ void write_color(Bucket *ser, std::vector<Board> *brds){
             289, 292, 295,298, 301, 304,
     };
 
-    while(true) {
-        int cnt = 0;
-        for (auto &brd: *brds) {
+    while (!exit_flg) {
 
-            f_color c(3, std::vector<uint8_t>(18 * 18));
+        for(auto &brd: *brds) {
+            int cnt = 0;
 
+            f_color c(3, std::vector<uint8_t>(18 * 18));    // TODO: この初期化をいい感じにしたい
+
+            // Boardインスタンスから色データをpop
             int ret = brd.pop_color_values(&c);
-            if(ret < 0){
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                continue;
+            if (ret < 0) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                continue;  // データなければリトライ
             }
 
             if (c.size() != 3) continue;
@@ -216,12 +263,21 @@ void write_color(Bucket *ser, std::vector<Board> *brds){
                     cnt++;
                 }
             }
+            if (cnt == 0)continue;
+            soc_vec.at(brd.get_id()).transfer(buf, cnt);
         }
-        if(cnt == 0)
-        ser->transfer(buf, cnt);
+    }
+
+    for(const auto& soc : soc_vec){
+        soc.second.close();
     }
 }
 
+/**
+ * 色情報をSubscribe
+ * @param addr  bind アドレス
+ * @param brd   Board インスタンス
+ */
 void subscribe_color(const char *addr, Board *brd){
 
     // init subscriber
@@ -254,15 +310,18 @@ void subscribe_color(const char *addr, Board *brd){
                          &bid);
         if(ret == EOF) continue; //fail to decode
 
+        // 受信データサイズを計算
         unsigned long d_size_r = recv_msgs.at(1).size() / sizeof(uint8_t);
         unsigned long d_size_g = recv_msgs.at(2).size() / sizeof(uint8_t);
         unsigned long d_size_b = recv_msgs.at(3).size() / sizeof(uint8_t);
 
+        // データサイズをチェック
         if(d_size_b != d_size_r || d_size_b != d_size_g){
             std::cerr << "invalid data size (color) bid=" << brd->get_id() << std::endl;
             continue;
         }
 
+        // 色データをBoardインスタンスのqueueへstore （ここの処理どうにかしたい）
         f_color c(3, std::vector<uint8_t>(18 * 18));
         for(int i = 0; i < d_size_r; i++){
             c.at(0).at(i) = recv_msgs.at(1).data<uint8_t>()[i];
@@ -273,115 +332,73 @@ void subscribe_color(const char *addr, Board *brd){
     }
 }
 
-void get_board_info(serial *ser, controller *brd){
-    std::vector<tm_packet> pacs = std::vector<tm_packet>();
-    tm_packet info_pac = {};
-    bool ret;
-    bool endflg = false;
 
-    while(!endflg){
-        ret = ser->read(&pacs);
-        if(!ret) continue;
+void launch(const char *brd_addr, const char *bind_addr, const char *color_addr, std::vector<Board> *brds){
 
-        for(tm_packet pac: pacs){
-            if(((pac.d_num >> 8) & 0xff) == 0xff){
-                info_pac = pac;
-                endflg = true;
-                break;
-            }
-        }
-    }
-
-    brd->version = info_pac.d_num & 0xff;
-    brd->chain = (info_pac.value >> 8) & 0xff;
-    brd->sensors = info_pac.value & 0xff;
-}
-
-void launch(Bucket *ser, const char *bind_addr, const char *color_addr, std::vector<Board> *brds){
-
-    // data publish
+    // センサーデータのPublishスレッド
     std::future<void> pub_data_th = std::async(std::launch::async, publish_data, bind_addr, brds);
-#if !defined(NO_BOARD)
-    std::future<void> pico_th = std::async(std::launch::async, receive_data, ser, brds);
-    std::future<void> write_th = std::async(std::launch::async, write_color, ser, brds);
+
+    // 基板データ取得　スレッド
+    Eth receive_soc(brd_addr, ETH_PORT_BASE + brds->size(), ETH_CONN_TCP, brd_master[4].sensors * brd_master[4].modes);
+    std::future<void> pico_th = std::async(std::launch::async, receive_data, &receive_soc, brds);
+
+    // 色データ送信　スレッド
+    std::future<void> send_color_th = std::async(std::launch::async, write_color, brd_addr, brds);
+
+    // 色データSubscribe スレッド群
     std::vector<std::future<void>> sub_color_ths;
     for(auto &brd: *brds){
         sub_color_ths.emplace_back(std::async(std::launch::async, subscribe_color, color_addr, &brd));
     }
-#else
-    // dummy data store to queue
-    std::future<void> pico_th = std::async(std::launch::async, push_dummy, brd);
-#endif
 
+    // スレッド待機
     pub_data_th.wait();
     pico_th.wait();
-    write_th.wait();
+    send_color_th.wait();
     for(auto &sct : sub_color_ths) {
         sct.wait();
     }
 }
 
-void run(const char* port, const char* bind_addr, const char* info_addr, const char* color_addr){
-    int modes = 5;
+
+/**
+ * 初期化など
+ * @param port          シリアルポート
+ * @param bind_addr     Analyzerノードのアドレス
+ * @param info_addr     Storageノードのアドレス
+ * @param color_addr    色情報Bindアドレス
+ */
+void run(const char* port, const char* bind_addr, const char* info_addr, const char* color_addr, int version, int chain){
 
     // print options
     printf("TM SERIAL PORT      : %s\n", port);
     printf("SENS CONNECT ADDR   : %s\n", bind_addr);
     printf("META CONNECT ADDR   : %s\n", info_addr);
-    printf("SENSING MODES  : %d\n", modes);
 
-    // init vars
-    serial ser(port, B115200);
-    controller c = {};
-    char name[256];
-    sscanf(port, "/dev/%s", name);
+    printf("SERIAL_NUM       : %s\n", port);
+    printf("CONTROLLER_VER   : %d\n", version);
+    printf("BOARD_CHAIN      : %d\n", chain);
 
-#if !defined(NO_BOARD)
-    // open serial port
-    int ret = ser.tm_open();
-    if(ret != 0)exit(-1);
-
-    printf("Waiting for board data...\n");
-
-    // wait for board-info from serial-connection
-    get_board_info(&ser, &c);
-    c.modes = modes;
-    c.serial = get_serial_num(name);
-#else
-    printf("Test Mode Enabled.\n");
-    c.version = 4;
-    c.chain = 2;
-    c.modes = modes;
-    c.sensors = 18;
-    c.serial = "board_is_not_connected";
-#endif
-
-    printf("SERIAL_NUM       : %s\n", c.serial);
-    printf("CONTROLLER_VER   : %d\n", c.version);
-    printf("BOARD_CHAIN      : %d\n", c.chain);
-    printf("SENSORS          : %d\n", c.sensors);
-
-    // get board ids
+    // Storageノードから基板IDを取得
     std::vector<unsigned int> ids{};
-    get_board_ids(info_addr, c.serial,  c.chain, &ids);
+    get_board_ids(info_addr, port,  chain, &ids);
 
     // create board instance
     std::vector<Board> brds;
     for(unsigned int id : ids){
-        brds.emplace_back(id, c.sensors, c.modes);
+        std::cout << "BID : " << id << std::endl;
+        brds.emplace_back(id, brd_master[version].sensors, brd_master[version].modes);
     }
 
     // launch
-    launch(&ser, bind_addr, color_addr, &brds);
-
-    ser.close();
+    launch(port, bind_addr, color_addr, &brds);
 
 }
 
 int main(int argc, char* argv[]){
 
     int c;
-    const char* optstring = "t:p:b:i:c:";
+    const char* optstring = "t:p:b:i:c:h:v:";
 
     // enable error log from getopt
     opterr = 0;
@@ -395,6 +412,9 @@ int main(int argc, char* argv[]){
     // connect address for subscribe color-data
     char* color_addr = nullptr;
 
+    int chain = 0;
+    int version = 0;
+
     // get options
     while((c = getopt(argc, argv, optstring)) != -1){
         if(c == 'p') {
@@ -403,8 +423,12 @@ int main(int argc, char* argv[]){
             bind_addr = optarg;
         }else if(c == 'i') {
             info_addr = optarg;
-        }else if(c == 'c'){
+        }else if(c == 'c') {
             color_addr = optarg;
+        }else if(c == 'h') {
+            chain = atoi(optarg);
+        }else if(c == 'v') {
+            version = atoi(optarg);
         }else{
             // parse error
             printf("unknown argument error\n");
@@ -414,7 +438,7 @@ int main(int argc, char* argv[]){
 
     // check for serial port
     if(ser_p == nullptr){
-        printf("require serial port option -p");
+        printf("require port option -p");
         return -1;
     }
     // check for bind address
@@ -432,8 +456,16 @@ int main(int argc, char* argv[]){
         printf("require color address option -c");
         return -3;
     }
+    if(version == 0){
+        printf("require board version");
+        return -1;
+    }
+    if(chain == 0){
+        printf("require chain count");
+        return -1;
+    }
 
-    run(ser_p, bind_addr, info_addr, color_addr);
+    run(ser_p, bind_addr, info_addr, color_addr, version, chain);
 
     return 0;
 }
