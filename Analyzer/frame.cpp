@@ -18,9 +18,9 @@ frame::frame(Container brd) {
     f_buf_size = get_frame_size();
     f_buf = cv::Mat::zeros(f_buf_size, CV_16UC1);
 
-    cal_upper = cv::Mat::zeros(f_buf_size, CV_16UC1);
-    cal_lower = cv::Mat::zeros(f_buf_size, CV_16UC1);
-    cal_gain = cv::Mat::zeros(f_buf_size, CV_16FC1);
+    cal_lower = std::vector<s_data>(brd.modes, s_data(bm.sensors));
+    cal_upper = std::vector<s_data>(brd.modes, s_data(bm.sensors));
+    cal_gain = std::vector<std::vector<float>>(brd.modes, std::vector<float>(bm.sensors));
 }
 
 uint16_t frame::get_id() const {
@@ -56,17 +56,22 @@ void frame::update(uint8_t mode, const uint16_t *data, unsigned long len) {
     }
 }
 
-void frame::pack_mat(const uint16_t *map) {
-    if(buf.empty()) return;
+void frame::pack_mat(const uint16_t *map, const std::vector<s_data> *cbuf) {
+    if(cbuf->empty()) return;
 
-    for(int i = 0; i < buf.size(); i++){
-        for(int j = 0; j < buf.at(i).size(); j++){
+    // mode
+    for(int i = 0; i < cbuf->size(); i++){
+        // sensor
+        for(int j = 0; j < cbuf->at(i).size(); j++){
             int x = (map[j] >> 8) & 0xFF;
             int y = map[j] & 0xFF;
-            x = x * 2;
-            y = y * 2;
 
-            uint16_t val = buf.at(i).at(j);
+            if(brd_data.modes == 5) {
+                x = x * 2;
+                y = y * 2;
+            }
+
+            uint16_t val = cbuf->at(i).at(j);
 
             //if(y >= f_buf.rows | x >= f_buf.cols) continue;
 
@@ -84,6 +89,7 @@ void frame::pack_mat(const uint16_t *map) {
                     f_buf.at<uint16_t>(y, x + 1) = val;
                     break;
                 default:
+                    f_buf.at<uint16_t>(y, x) = val;
                     break;
             }
         }
@@ -92,11 +98,15 @@ void frame::pack_mat(const uint16_t *map) {
 
 cv::Size2i frame::get_frame_size() {
     Brd_Master tmp = get_brd_master();
-    return {(int)tmp.buf_x * 2, (int)tmp.buf_y * 2};
+    if(brd_data.modes == 5){
+        return {(int)tmp.buf_x * 2, (int)tmp.buf_y * 2};
+    }else{
+        return {(int)tmp.buf_x, (int)tmp.buf_y};
+    }
 }
 
 void frame::get_mat(cv::OutputArray dst) {
-    pack_mat(get_brd_master().map);
+    pack_mat(get_brd_master().map, &buf);
 
     dst.create(f_buf_size, CV_16UC1);
     cv::Mat m = dst.getMat();
@@ -113,32 +123,37 @@ void frame::get_mat(cv::OutputArray dst) {
 }
 
 void frame::get_mat_calibrated(cv::OutputArray dst){
-    dst.create(f_buf_size, CV_8UC1);
-    cv::Mat m = dst.getMat();
 
-    cv::Mat tmp;
-    get_mat(tmp);
+    std::vector<s_data> cal_d(brd_data.modes, s_data(sensors));
+    std::copy(buf.begin(), buf.end(), cal_d.begin());
 
     // remove offset
-    for(int i = 0; i < f_buf_size.height; i++){
-        auto *cl_ptr = cal_lower.ptr<uint16_t>(i);
-        auto *fb_ptr = tmp.ptr<uint16_t>(i);
-        for(int j = 0; j < f_buf_size.width; j++){
-            if(fb_ptr[j] > cl_ptr[j]){
-                fb_ptr[j] -= cl_ptr[j];
+    for(int mode = 0; mode < buf.size(); mode++){
+        for(int s = 0; s < buf.at(mode).size(); s++){
+
+            // cancel offset
+            if(cal_d[mode][s] > cal_lower[mode][s]){
+                cal_d.at(mode).at(s) -= cal_lower[mode][s];
             }else{
-                fb_ptr[j] = 0x00;
+                cal_d.at(mode).at(s) = 0.0;
             }
+
+            // calc range
+            unsigned int tmp = cal_d.at(mode).at(s) * cal_gain.at(mode).at(s);
+            cal_d.at(mode).at(s) = (tmp > UINT16_MAX) ? UINT16_MAX : (uint16_t)tmp;
         }
     }
 
-    // calc range
+    pack_mat(get_brd_master().map, &cal_d);
+
+    dst.create(f_buf_size, CV_16UC1);
+    cv::Mat m = dst.getMat();
+
     for(int i = 0; i < f_buf_size.height; i++){
-        auto *cg_ptr = cal_gain.ptr<float>(i);
-        auto *fb_ptr = tmp.ptr<uint16_t>(i);
-        auto *dst_ptr = m.ptr<uint8_t>(i);
+        auto *m_ptr = m.ptr<uint16_t>(i);
+        auto *fb_ptr = f_buf.ptr<uint16_t>(i);
         for(int j = 0; j < f_buf_size.width; j++){
-            dst_ptr[j] = (float)fb_ptr[j] * (float)cg_ptr[j];
+            m_ptr[j] = fb_ptr[j];
         }
     }
 }
@@ -146,8 +161,8 @@ void frame::get_mat_calibrated(cv::OutputArray dst){
 void frame::led2sens_coordinate(const cv::Point2i *src, cv::Point2i *dst) const {
     switch(brd_data.version){
         case 4:
-            double sx = (double)src->x / 18 * 6;
-            double sy = (double)src->y / 18 * 6;
+            double sx = (double)src->x / 18 * 5;
+            double sy = (double)src->y / 18 * 5;
             double x = (sx * cos(M_PI / 4)) - (sy * sin(M_PI / 4));
             double y = (sx * sin(M_PI / 4)) + (sy * cos(M_PI / 4));
             dst->x = floor(x);
@@ -157,38 +172,23 @@ void frame::led2sens_coordinate(const cv::Point2i *src, cv::Point2i *dst) const 
 }
 
 void frame::calc_gain(){
-    for(int i = 0; i < f_buf_size.height; i++){
-        auto *cl_ptr = cal_lower.ptr<uint16_t>(i);
-        auto *cu_ptr = cal_upper.ptr<uint16_t>(i);
-        auto *cg_ptr = cal_gain.ptr<float>(i);
-        for(int j = 0; j < f_buf_size.width; j++){
-            if(cu_ptr[j] > cl_ptr[j]){
-                cg_ptr[j] = 255.0 / (float)(cu_ptr[j] - cl_ptr[j]);
+    for(int mode = 0; mode < buf.size(); mode++){
+        for(int s = 0; s < buf.at(mode).size(); s++){
+            if(cal_upper[mode][s] > cal_lower[mode][s]){
+                cal_gain.at(mode).at(s) = (float)UINT16_MAX / (float)(cal_upper[mode][s] - cal_lower[mode][s]);
             }else{
-                cg_ptr[j] = 0.0;
+                cal_gain.at(mode).at(s) = 0.0;
             }
         }
     }
 }
 
 void frame::set_lower() {
-    for(int i = 0; i < f_buf_size.height; i++){
-        auto *m_ptr = cal_lower.ptr<uint16_t>(i);
-        auto *fb_ptr = f_buf.ptr<uint16_t>(i);
-        for(int j = 0; j < f_buf_size.width; j++){
-            m_ptr[j] = fb_ptr[j];
-        }
-    }
+    std::copy(buf.begin(), buf.end(), cal_lower.begin());
     calc_gain();
 }
 
 void frame::set_upper() {
-    for(int i = 0; i < f_buf_size.height; i++){
-        auto *m_ptr = cal_upper.ptr<uint16_t>(i);
-        auto *fb_ptr = f_buf.ptr<uint16_t>(i);
-        for(int j = 0; j < f_buf_size.width; j++){
-            m_ptr[j] = fb_ptr[j];
-        }
-    }
+    std::copy(buf.begin(), buf.end(), cal_upper.begin());
     calc_gain();
 }

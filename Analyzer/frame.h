@@ -26,11 +26,11 @@ private:
     int sensors;
     cv::Size2i f_buf_size;
 
-    cv::Mat cal_lower;
-    cv::Mat cal_upper;
-    cv::Mat cal_gain;
+    std::vector<s_data> cal_lower;
+    std::vector<s_data> cal_upper;
+    std::vector<std::vector<float>> cal_gain;
 
-    void pack_mat(const uint16_t *map);
+    void pack_mat(const uint16_t *map, const std::vector<s_data> *cbuf);
     void led2sens_coordinate(const cv::Point2i *src, cv::Point2i *dst) const;
     Brd_Master get_brd_master() const;
     void calc_gain();

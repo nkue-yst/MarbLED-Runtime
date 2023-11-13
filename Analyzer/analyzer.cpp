@@ -96,6 +96,7 @@ void command_handling(std::vector<frame> *frames, const char *addr){
 
         }
 
+        subscriber.send(zmq::buffer("ANALYZER ACK"), zmq::send_flags::none);
 
     }
 }

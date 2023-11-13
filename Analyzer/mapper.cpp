@@ -21,10 +21,10 @@ cv::Size2i Mapper::calc_fb_size() {
         cv::Size2i st = frm.get_frame_size();
 
         if(minx > tmp.x) minx = tmp.x;
-        if(maxx < tmp.x + st.width) maxx = tmp.x + st.width;
+        if(maxx < tmp.x + st.width) maxx = tmp.x + st.width + 1;
 
         if(miny > tmp.y) miny = tmp.y;
-        if(maxy < tmp.y + st.height) maxy = tmp.y + st.height;
+        if(maxy < tmp.y + st.height) maxy = tmp.y + st.height + 1;
     }
 
     return {maxx - minx, maxy - miny};
@@ -42,9 +42,15 @@ void Mapper::place_mat(cv::Point2i p, const cv::Mat *src) {
 void Mapper::update() {
 
     cv::Mat p;
+    fb = cv::Mat::zeros(fb.rows, fb.cols, CV_16UC1);
     for(auto frm : *frms){
-        frm.get_mat(p);
+        frm.get_mat_calibrated(p);
         place_mat(frm.get_layout(), &p);
     }
+
+    cv::Mat tmp;
+    cv::resize(fb, tmp, cv::Size(200, 200), 10, 10, cv::INTER_NEAREST);
+    cv::imshow("test", tmp);
+    cv::waitKey(10);
 
 }
