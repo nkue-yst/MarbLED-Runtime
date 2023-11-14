@@ -40,18 +40,46 @@ namespace tll
                 //////////////////////////////
                 zmq::context_t ctx;
                 zmq::socket_t pub(ctx, zmq::socket_type::pub);
-                //pub.bind("tcp://*:44100");       // Connection for old version
-                pub.bind("tcp://*:8001");  // Connection for new version
+                pub.bind("tcp://*:8001");
 
                 // 基板情報のリストを取得する
                 std::vector<Container> board_list;
-                std::cout << get_connected_boards("tcp://127.0.0.1:8001", &board_list) << std::endl;
-                printLog("Get MarbLED board infomations.");
+
+                if (tllEngine::get()->simulate_mode)
+                {
+                    printLog("Start with simulation mode.");
+                }
+                else
+                {
+                    if (get_connected_boards("tcp://127.0.0.1:8001", &board_list) < 0)
+                    {
+                        printLog("Failed to get MarbLED board infomations.");
+                        tllEngine::get()->simulate_mode = true;
+                        printLog("Start with simulation mode.");
+
+                        // Add virtual boards information
+                        Container board{};
+                        board.id = 0;
+                        board.layout_x = 0;
+                        board.layout_y = 0;
+                        board_list.push_back(board);
+
+                        board.id = 1;
+                        board.layout_x = led_width * 1;
+                        board.layout_y = 0;
+                        board_list.push_back(board);
+
+                        board.id = 2;
+                        board.layout_x = led_width * 2;
+                        board.layout_y = 0;
+                        board_list.push_back(board);
+                    }
+                }
 
                 //////////////////////////////
                 ///// 色情報の送信を開始 /////
                 //////////////////////////////
-                printLog("Start sending color data");
+                printLog("Start sending color data to MarbLED boards.");
                 while (!TLL_ENGINE(EventHandler)->getQuitFlag())
                 {
                     if (!TLL_ENGINE(SerialManager)->send_ready)
@@ -60,38 +88,9 @@ namespace tll
                         continue;
                     }
 
-                    ////////////////////////////////////////////
-                    ////////// ⇣ Deprecated Version ⇣ //////////
-                    ////////////////////////////////////////////
-                    /*
-                    std::vector<uint8_t> color_vec;    // 送信用配列
-                    color_vec.reserve(TLL_ENGINE(PanelManager)->getWidth() * TLL_ENGINE(PanelManager)->getHeight() * 3);
-
-                    for (uint16_t y = 0; y < TLL_ENGINE(PanelManager)->getHeight(); y++)
-                    {
-                        for (uint16_t x = 0; x < TLL_ENGINE(PanelManager)->getWidth(); x++)
-                        {
-                            Color c = TLL_ENGINE(PanelManager)->getColor(x, y);
-                            color_vec.push_back(c.r_);
-                            color_vec.push_back(c.g_);
-                            color_vec.push_back(c.b_);
-                        }
-                    }
-
-                    zmq::message_t topic("color");
-                    auto res = pub.send(topic, zmq::send_flags::sndmore);
-
-                    zmq::message_t msg(color_vec);
-                    res = pub.send(msg, zmq::send_flags::none);
-                    */
-                    ////////////////////////////////////////////
-                    ////////// ⇡ Deprecated Version ⇡ //////////
-                    ////////////////////////////////////////////
-
-
-                    /////////////////////////////////////
-                    ////////// ⇣ New Version ⇣ //////////
-                    /////////////////////////////////////
+                    ///////////////////////////
+                    ///// Make color data /////
+                    ///////////////////////////
                     for (auto board : board_list)
                     {
                         std::array<uint16_t, 1> id = { board.id };  // Board ID
@@ -119,9 +118,6 @@ namespace tll
                         pub.send(zmq::message_t(g_array), zmq::send_flags::sndmore);  // Green
                         pub.send(zmq::message_t(b_array), zmq::send_flags::none);     // Blue
                     }
-                    /////////////////////////////////////
-                    ////////// ⇡ New Version ⇡ //////////
-                    /////////////////////////////////////
 
                     TLL_ENGINE(SerialManager)->send_ready = false;
                 }
@@ -141,67 +137,21 @@ namespace tll
 
     SerialManager::SerialManager() noexcept
     {
-        this->system_mode = 0;
-
         printLog("Create Serial manager");
     }
 
     SerialManager::~SerialManager() noexcept
     {
-        if (this->system_mode == 0)
-        {
-            #ifdef WITH_RASPI
-            serialClose(fd);
-            #endif
-        }
-
         printLog("Destroy Serial manager");
     }
 
-    void SerialManager::init(std::string LED_driver)
+    void SerialManager::init()
     {
-        this->led_driver_ = LED_driver;
-
-        if (LED_driver == "HT16K33")
-        {
-            #ifdef WITH_RASPI
-            fd = serialOpen("/dev/ttyUSB0", 115200);
-            if (fd < 0)
-            {
-                this->system_mode = 1;
-                std::cout << "Start with simulation mode." << std::endl;
-            }
-            #else
-            //std::cout << "Start with simulation mode." << std::endl;
-            this->system_mode = 1;    
-            #endif
-        }
-
         threadSendColor();
     }
 
     void SerialManager::sendColorData()
     {
-        if (this->system_mode == 0)
-        {
-            uint16_t width  = TLL_ENGINE(PanelManager)->getWidth();
-            uint16_t height = TLL_ENGINE(PanelManager)->getHeight();
-
-            // If led driver is HT16K33 and use ESP32
-            if (this->led_driver_ == "HT16K33")
-            {
-                for (uint16_t y = 0; y < height; y++)
-                {
-                    for (uint16_t x = 0; x < width; x++)
-                    {
-                        #ifdef WITH_RASPI
-                        //serialPutchar(fd, TLL_ENGINE(PanelManager)->getColor(x, y));
-                        #endif
-                    }
-                }
-            }
-        }
-
         TLL_ENGINE(SerialManager)->send_ready = true;
     }
 

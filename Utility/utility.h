@@ -31,7 +31,7 @@ typedef struct {
  * @param chain_num Chain番号
  * @return          取得したBoardID
  */
-int get_board_id(const char *addr, const char *serial, unsigned int chain_num) {
+inline int get_board_id(const char *addr, const char *serial, unsigned int chain_num) {
 
     // prepare socket
     zmq::context_t ctx(1);
@@ -66,7 +66,7 @@ int get_board_id(const char *addr, const char *serial, unsigned int chain_num) {
  * @param boards    コンテナのリスト
  * @return  取得した基板数
  */
-int get_connected_boards(const char *addr, std::vector<Container> *boards) {
+inline int get_connected_boards(const char *addr, std::vector<Container> *boards) {
 
     // prepare socket
     zmq::context_t ctx(1);
@@ -81,7 +81,7 @@ int get_connected_boards(const char *addr, std::vector<Container> *boards) {
 
     // wait for replies
     std::vector<zmq::message_t> recv_msgs;
-    zmq::recv_multipart(req, std::back_inserter(recv_msgs));
+    zmq::recv_multipart(req, std::back_inserter(recv_msgs), zmq::recv_flags::dontwait);
     if(recv_msgs.empty()) return MESSAGE_ERROR;
 
     req.close();

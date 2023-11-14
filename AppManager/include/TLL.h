@@ -37,7 +37,7 @@ namespace tll
      * @param  width  パネルの横幅
      * @param  height  パネルの高さ
      */
-    void init(uint16_t width, uint16_t height, std::string LED_driver = "HT16K33");
+    void init(uint16_t width, uint16_t height);
 
     /**
      * @fn     bool loop()
