@@ -99,6 +99,15 @@ namespace tll
                                 r_array.push_back(c.r_);
                                 g_array.push_back(c.g_);
                                 b_array.push_back(c.b_);
+
+                                // Debug print for color data
+                                // std::cout <<
+                                //     "x: "   << std::setw(3) << x <<
+                                //     ", y: " << std::setw(3) << y <<
+                                //     ", r: " << std::setw(3) << (int)c.r_ <<
+                                //     ", g: " << std::setw(3) << (int)c.g_ <<
+                                //     ", b: " << std::setw(3) << (int)c.b_
+                                // << std::endl;
                             }
                         }
 
