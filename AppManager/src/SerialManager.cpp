@@ -40,40 +40,32 @@ namespace tll
                 //////////////////////////////
                 zmq::context_t ctx;
                 zmq::socket_t pub(ctx, zmq::socket_type::pub);
-                pub.bind("tcp://*:8001");
+                pub.bind("tcp://*:44100");
 
                 // 基板情報のリストを取得する
                 std::vector<Container> board_list;
 
-                if (tllEngine::get()->simulate_mode)
+                if (tllEngine::get()->simulate_mode || get_connected_boards("tcp://127.0.0.1:8001", &board_list) < 0)
                 {
+                    tllEngine::get()->simulate_mode = true;
                     printLog("Start with simulation mode.");
-                }
-                else
-                {
-                    if (get_connected_boards("tcp://127.0.0.1:8001", &board_list) < 0)
-                    {
-                        printLog("Failed to get MarbLED board infomations.");
-                        tllEngine::get()->simulate_mode = true;
-                        printLog("Start with simulation mode.");
 
-                        // Add virtual boards information
-                        Container board{};
-                        board.id = 0;
-                        board.layout_x = 0;
-                        board.layout_y = 0;
-                        board_list.push_back(board);
+                    // Add virtual boards information
+                    Container board{};
+                    board.id = 0;
+                    board.layout_x = 0;
+                    board.layout_y = 0;
+                    board_list.push_back(board);
 
-                        board.id = 1;
-                        board.layout_x = led_width * 1;
-                        board.layout_y = 0;
-                        board_list.push_back(board);
+                    board.id = 1;
+                    board.layout_x = led_width * 1;
+                    board.layout_y = 0;
+                    board_list.push_back(board);
 
-                        board.id = 2;
-                        board.layout_x = led_width * 2;
-                        board.layout_y = 0;
-                        board_list.push_back(board);
-                    }
+                    board.id = 2;
+                    board.layout_x = led_width * 2;
+                    board.layout_y = 0;
+                    board_list.push_back(board);
                 }
 
                 //////////////////////////////
@@ -93,10 +85,10 @@ namespace tll
                     ///////////////////////////
                     for (auto board : board_list)
                     {
-                        std::array<uint16_t, 1> id = { board.id };  // Board ID
-                        std::vector<uint8_t> r_array;               // Red array
-                        std::vector<uint8_t> g_array;               // Green array
-                        std::vector<uint8_t> b_array;               // Blue array
+                        uint16_t board_id = board.id;  // Board ID
+                        std::vector<uint8_t> r_array;  // Red array
+                        std::vector<uint8_t> g_array;  // Green array
+                        std::vector<uint8_t> b_array;  // Blue array
 
                         for (uint32_t y = board.layout_y; y < board.layout_y + led_height; ++y)
                         {
@@ -110,10 +102,16 @@ namespace tll
                             }
                         }
 
+                        char topic[256] = {};
+                        std::sprintf(topic, "BRD_COLOR %d", board_id);
+
+                        // Debug print for topic
+                        // std::cout << topic << std::endl;
+
                         //////////////////////////////////////////
                         ///// Send board ID and pixel colors /////
                         //////////////////////////////////////////
-                        pub.send(zmq::message_t(id), zmq::send_flags::sndmore);       // Board ID
+                        pub.send(zmq::message_t(topic),  zmq::send_flags::sndmore);   // Board ID
                         pub.send(zmq::message_t(r_array), zmq::send_flags::sndmore);  // Red
                         pub.send(zmq::message_t(g_array), zmq::send_flags::sndmore);  // Green
                         pub.send(zmq::message_t(b_array), zmq::send_flags::none);     // Blue
