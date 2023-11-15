@@ -12,10 +12,6 @@
 #include <cmath>
 #include <map>
 
-#if !defined(NO_BOARD)
-#include <libudev.h>
-#endif
-
 #include "serial.h"
 #include "eth.h"
 #include "board.h"
@@ -29,15 +25,6 @@
 typedef std::vector<std::vector<uint16_t>> f_img;
 
 bool exit_flg = false;
-
-
-#if !defined(NO_BOARD)
-const char *get_serial_num(const char *name){
-    udev* ud = udev_new();
-    udev_device* udv = udev_device_new_from_subsystem_sysname(ud, "tty", name);
-    return udev_device_get_property_value(udv, "ID_SERIAL");
-}
-#endif
 
 
 /**
