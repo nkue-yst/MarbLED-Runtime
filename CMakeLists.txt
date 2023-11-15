@@ -17,6 +17,6 @@ include_directories(${CMAKE_SOURCE_DIR}/Utility)
 
 ### Build main programs ###
 add_subdirectory(AppManager)
-add_subdirectory(Storage)
-add_subdirectory(Analyzer)
-add_subdirectory(Driver)
+#add_subdirectory(Storage)
+#add_subdirectory(Analyzer)
+#add_subdirectory(Driver)
