@@ -48,9 +48,17 @@ void Mapper::update() {
         place_mat(frm.get_layout(), &p);
     }
 
-    cv::Mat tmp;
-    cv::resize(fb, tmp, cv::Size(200, 200), 10, 10, cv::INTER_NEAREST);
-    cv::imshow("test", tmp);
-    cv::waitKey(10);
+}
 
+void Mapper::get_img(cv::OutputArray dst) {
+    dst.create(fb.rows, fb.cols, CV_16UC1);
+    cv::Mat m = dst.getMat();
+
+    for(int i = 0; i < fb.rows; i++){
+        auto *m_ptr = m.ptr<uint16_t>(i);
+        auto *fb_ptr = fb.ptr<uint16_t>(i);
+        for(int j = 0; j < fb.cols; j++){
+            m_ptr[j] = fb_ptr[j];
+        }
+    }
 }

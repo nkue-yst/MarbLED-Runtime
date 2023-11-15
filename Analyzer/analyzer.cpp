@@ -105,6 +105,28 @@ void command_handling(std::vector<frame> *frames, const char *addr){
 void update(Mapper *me){
     while(running){
         me->update();
+
+        cv::Mat tmp;
+        me->get_img(tmp);
+        cv::resize(tmp, tmp, cv::Size(), 4, 4, cv::INTER_CUBIC);
+
+        cv::Mat img8bit;
+        tmp.convertTo(img8bit, CV_8UC1, 255.0 / (UINT16_MAX));
+
+        cv::Mat binary;
+        cv::threshold(img8bit, binary, 0, 255, cv::THRESH_OTSU);
+
+        std::vector<std::vector<cv::Point>> contours;
+        cv::findContours(binary, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+
+        cv::Mat result;
+        cv::cvtColor(img8bit, result, cv::COLOR_GRAY2BGR);
+
+        cv::drawContours(result, contours, -1, cv::Scalar(0, 255, 0), 1);
+
+        cv::resize(result, result, cv::Size(400, 400), 0, 0, cv::INTER_NEAREST);
+        cv::imshow("test", result);
+        cv::waitKey(10);
     }
 }
 

@@ -21,6 +21,7 @@ private:
 public:
     explicit Mapper(std::vector<frame> *frames);
     void update();
+    void get_img(cv::OutputArray dst);
 
 };
 
