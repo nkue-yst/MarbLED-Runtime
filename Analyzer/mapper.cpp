@@ -21,10 +21,10 @@ cv::Size2i Mapper::calc_fb_size() {
         cv::Size2i st = frm.get_frame_size();
 
         if(minx > tmp.x) minx = tmp.x;
-        if(maxx < tmp.x + st.width) maxx = tmp.x + st.width;
+        if(maxx < tmp.x + st.width) maxx = tmp.x + st.width + 1;
 
         if(miny > tmp.y) miny = tmp.y;
-        if(maxy < tmp.y + st.height) maxy = tmp.y + st.height;
+        if(maxy < tmp.y + st.height) maxy = tmp.y + st.height + 1;
     }
 
     return {maxx - minx, maxy - miny};
@@ -34,7 +34,7 @@ void Mapper::place_mat(cv::Point2i p, const cv::Mat *src) {
     for(int i = 0; i < src->cols; i++){
         for(int j = 0; j < src->rows; j++){
             if( p.x + i > fb.cols | p.y + j > fb.rows) continue;
-            fb.at<uint16_t>(p.y + j, p.x + i) = src->at<uint16_t>(j, i);
+            fb.at<uint16_t>(p.y + j, p.x + i) += src->at<uint16_t>(j, i);
         }
     }
 }
@@ -42,12 +42,23 @@ void Mapper::place_mat(cv::Point2i p, const cv::Mat *src) {
 void Mapper::update() {
 
     cv::Mat p;
+    fb = cv::Mat::zeros(fb.rows, fb.cols, CV_16UC1);
     for(auto frm : *frms){
-        frm.get_mat(p);
+        frm.get_mat_calibrated(p);
         place_mat(frm.get_layout(), &p);
     }
-    cv::Mat tmp;
-    cv::resize(p, tmp, cv::Size(100, 100), 30, 30, cv::INTER_NEAREST);
-    cv::imshow("prev", tmp);
-    cv::waitKey(100);
+
+}
+
+void Mapper::get_img(cv::OutputArray dst) {
+    dst.create(fb.rows, fb.cols, CV_16UC1);
+    cv::Mat m = dst.getMat();
+
+    for(int i = 0; i < fb.rows; i++){
+        auto *m_ptr = m.ptr<uint16_t>(i);
+        auto *fb_ptr = fb.ptr<uint16_t>(i);
+        for(int j = 0; j < fb.cols; j++){
+            m_ptr[j] = fb_ptr[j];
+        }
+    }
 }

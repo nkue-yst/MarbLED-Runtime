@@ -12,289 +12,401 @@
 #include <cmath>
 #include <map>
 
-#if !defined(NO_BOARD)
-#include <libudev.h>
-#endif
-
 #include "serial.h"
+#include "eth.h"
+#include "board.h"
+#include "utility.h"
 #include "zmq.hpp"
 #include "zmq_addon.hpp"
 
-#define     BUFFER_MAX       10
+// connection types
+#define ETH_PORT_BASE   8002
 
 typedef std::vector<std::vector<uint16_t>> f_img;
 
-std::queue<f_img> sensor_queue;
 bool exit_flg = false;
 
-struct board{
-    const char *serial;
-    uint8_t version;
-    uint8_t chain;
-    uint8_t sensors;
-    uint8_t modes;
-};
 
-struct container{
-    char serial[256];
-    uint16_t id;
-    uint16_t controller_id;
-    uint8_t version;
-    uint8_t chain_num;
-    uint8_t modes;
-    int32_t layout_x;
-    int32_t layout_y;
-};
+/**
+ * 基板IDをStorageノードから取得する
+ * @param ctx           zmq context
+ * @param conn_addr     Storage ノードのアドレス (e.g. tcp://127.0.0.1:8000)
+ * @param brd           基板情報
+ * @param ids           idリスト
+ * @return
+ */
+void get_board_ids(const char *conn_addr, const char *serial, unsigned int chain, std::vector<unsigned int> *ids){
 
-#if !defined(NO_BOARD)
-const char *get_serial_num(const char *name){
-    udev* ud = udev_new();
-    udev_device* udv = udev_device_new_from_subsystem_sysname(ud, "tty", name);
-    return udev_device_get_property_value(udv, "ID_SERIAL");
-}
-#endif
-
-int get_board_ids(zmq::context_t *ctx, const char *conn_addr, board *brd, std::map<unsigned int, unsigned int> *ids){
-    printf("Getting ID from storage.\n");
-
-    // prepare publisher
-    zmq::socket_t req(*ctx, zmq::socket_type::req);
-    req.connect(conn_addr);
-
-    printf("connected.\n");
-
-    std::vector<zmq::message_t> recv_msgs;
-
-    for(int i = 0; i < brd->chain; i++){
-        recv_msgs.clear();
-
-        container rqc{};
-        strcpy(rqc.serial, brd->serial);
-        rqc.chain_num = i;
-        rqc.version = brd->version;
-        rqc.modes = brd->modes;
-
-        req.send(zmq::buffer("STORAGE REQ_BRDIDS"), zmq::send_flags::sndmore);
-        req.send(zmq::buffer(&rqc, sizeof(rqc)), zmq::send_flags::none);
-
-        zmq::recv_multipart(req, std::back_inserter(recv_msgs));
-        if(recv_msgs.empty()) {
-            std::cout << "timeout" << std::endl;
-            continue;
-        }
-        if(recv_msgs.size() != 2) continue;
-
-        recv_msgs.erase(recv_msgs.begin());
-
-        container rc = *recv_msgs.at(0).data<container>();
-        ids->insert(std::make_pair(i, rc.id));
-
-        printf("CHAIN NUM[%d] = ID %d\n", i, rc.id);
-
+    for(int i = 0; i < chain; i++){
+        ids->push_back( get_board_id(conn_addr, serial, i) );
     }
 
-    req.close();
-    return 0;
 }
 
 
-// BRD_DATA [Serial-Number] [chain] [chain-num] [Mode] [Sensor-Data...]
-void publish_data(zmq::context_t *ctx, board *brd, const char *bind_addr, const std::map<unsigned int, unsigned int> *ids){
+/**
+ * センサーデータをpublish
+ * @param bind_addr     Analyzerノードのアドレス
+ * @param brds          Boardインスタンス群
+ */
+void publish_data(const char *bind_addr, std::vector<Board> *brds){
     printf("launch publisher\n");
 
 
     // prepare publisher
-    zmq::socket_t publisher(*ctx, zmq::socket_type::pub);
+    zmq::context_t ctx(1);
+    zmq::socket_t publisher(ctx, zmq::socket_type::pub);
     publisher.connect(bind_addr);
 
     printf("pub bind\n");
 
 
     char head[128];                                  // for data header
-    f_img frame;                                    // get from fifo buffer
 
 
     while(!exit_flg){
 
-        // retry when fifo is empty
-        if(sensor_queue.empty()){
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            continue;
-        }
+        for(auto &brd : *brds){
+            f_img frame(brd.get_modes(), std::vector<uint16_t>(brd.get_sensors()));
 
-        // get from fifo buffer
-        frame = sensor_queue.front();
-        sensor_queue.pop();
+            int ret = brd.pop_sensor_values(&frame);
+            if (ret < 0) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                continue;  //
+            }
 
-        // publish via zmq socket
-        for(int i = 0; i < frame.size(); i++){
+            // publish via zmq socket
+            for(int i = 0; i < frame.size(); i++){
 
-            int chain_num = (int)std::floor(i / brd->modes);
+                std::snprintf(head, 128, "BRD_DATA %d %d",
+                              brd.get_id(),
+                              i
+                );
 
-            std::snprintf(head, 128, "BRD_DATA %d %d %d %d",
-                          ids->at(chain_num),
-                          brd->chain,
-                          chain_num,
-                          i % brd->modes
-                          );
+                publisher.send(zmq::buffer(head), zmq::send_flags::sndmore);
+                publisher.send(zmq::buffer(frame.at(i)), zmq::send_flags::none);
 
-            publisher.send(zmq::buffer(head), zmq::send_flags::sndmore);
-            publisher.send(zmq::buffer(frame.at(i)), zmq::send_flags::none);
+            }
 
         }
+
     }
 }
 
-void store_buffer(const f_img& frm){
-    // block when fifo buffer is max
-    while(sensor_queue.size() >= BUFFER_MAX){
-        std::cerr << "buffer is max" << std::endl;
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-    sensor_queue.push(frm);
-}
 
-void receive_data(serial *ser, board *brd){
+/**
+ * 基板からセンサーデータ取得
+ * @param ser   シリアル通信インスタンス
+ * @param brds  Boardインスタンス群
+ */
+void receive_data(Bucket *ser, std::vector<Board> *brds){
+
+    int sr = ser->tm_open();
+    if(sr < 0){
+        std::cerr << "socket open error [data receive]" << std::endl;
+        return;
+    }
+
     std::vector<tm_packet> pacs = std::vector<tm_packet>();
-    f_img frame(brd->modes * brd->chain, std::vector<uint16_t>(brd->sensors));
+    std::vector<f_img> frames;
+    for(int i = 0; i < brds->size(); i++){
+        frames.emplace_back(brds->at(0).get_modes(), std::vector<uint16_t>(brds->at(0).get_sensors()));
+    }
 
     bool ret;
+    int data_per_board = brds->at(0).get_sensors() * brds->at(0).get_modes();
+    int sensors = brds->at(0).get_sensors();
+    int modes = brds->at(0).get_modes();
 
     while(!exit_flg) {
         ret = ser->read(&pacs);
-        if(ret == 0)continue;
+        if (ret == 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            continue;  // データなければリトライ
+        }
 
         for(tm_packet pac : pacs){
+            int brd = pac.d_num / data_per_board;
+            int sensor = pac.d_num % sensors;
+            int mode = pac.d_num % modes;
 
-            // detect error
-            if(pac.s_num >= brd->sensors || pac.mode >= brd->modes) continue;
+            frames.at(brd).at(mode).at(sensor) = pac.value;
+        }
 
-            frame.at(pac.mode).at(pac.s_num) = pac.value;
-
-            if(pac.s_num == brd->sensors -1 && pac.mode == brd->modes -1) store_buffer(frame);
+        for(int i = 0; i < brds->size(); i++){
+            brds->at(i).store_sensor(&frames.at(i));
         }
     }
 
+    ser->close();
 }
 
-void push_dummy(board *brd){
-    std::vector<tm_packet> pacs = std::vector<tm_packet>();
-    f_img frame(brd->modes * brd->chain, std::vector<uint16_t>(brd->sensors));
-    for(auto &f : frame){
-        std::fill(f.begin(), f.end(), 0xffff);
-    }
+
+/**
+ * ダミーデータ生成（テスト用）
+ * @param brds  Boardインスタンス群
+ */
+void push_dummy(std::vector<Board> *brds){
 
     while(!exit_flg) {
+        for(auto &b : *brds){
 
-        store_buffer(frame);
+            f_img frame(b.get_modes(), std::vector<uint16_t>(b.get_sensors()));
+            for(auto &f : frame){
+                std::fill(f.begin(), f.end(), 0xffff);
+            }
+            b.store_sensor(&frame);
+
+        }
+
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     }
 }
 
-void get_board_info(serial *ser, board *brd){
-    std::vector<tm_packet> pacs = std::vector<tm_packet>();
-    tm_packet info_pac = {};
-    bool ret;
-    bool endflg = false;
+/**
+ * 基板に色情報を送信
+ * TODO: （基板に固有の処理すぎる）
+ * @param ser   シリアル通信インスタンス
+ * @param brds  Boardインスタンス群
+ */
+void write_color(const char *brd_addr, std::vector<Board> *brds){
 
-    while(!endflg){
-        ret = ser->read(&pacs);
-        if(!ret) continue;
+    std::map<unsigned int, Eth> soc_vec;
+    for(int i = 0; i < brds->size(); i++){
+        soc_vec.insert(
+                std::make_pair(
+                        brds->at(i).get_id(),
+                        Eth(brd_addr, ETH_PORT_BASE + i, ETH_CONN_UDP, brd_master[4].sensors * brd_master[4].modes)
+                        )
+                        );
+        int sr = soc_vec.at(brds->at(i).get_id()).tm_open();
+        if(sr < 0){
+            std::cerr << "socket open error [color write]" << std::endl;
+            return;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
 
-        for(tm_packet pac: pacs){
-            if(pac.s_num == 0xff){
-                info_pac = pac;
-                endflg = true;
-                break;
+    uint8_t buf[2048] = {};
+    uint8_t r[18][18] = {};
+    uint8_t g[18][18] = {};
+    uint8_t b[18][18] = {};
+    unsigned int ignore_pix[36] = {
+            19, 22, 25, 28, 31, 34,
+            73, 76, 79, 82, 85, 88,
+            127, 130, 133, 136, 139, 142,
+            181, 184, 187, 190, 193, 196,
+            235, 238, 241, 243, 246, 249,
+            289, 292, 295,298, 301, 304,
+    };
+
+    while (!exit_flg) {
+
+        for(auto &brd: *brds) {
+            int cnt = 0;
+
+            f_color c(3, std::vector<uint8_t>(18 * 18));    // TODO: この初期化をいい感じにしたい
+
+            // Boardインスタンスから色データをpop
+            int ret = brd.pop_color_values(&c);
+            if (ret < 0) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                continue;  // データなければリトライ
             }
+
+            if (c.size() != 3) continue;
+
+            // Reverse odd rows
+            for (int i = 0; i < c.at(0).size(); i++) {
+
+                int row = (int) floor(i / 18.0);
+                int col = i % 18;
+                int pol = row % 2;
+
+                if (pol) col = 17 - col;
+                r[row][col] = c.at(0).at(i);
+                g[row][col] = c.at(1).at(i);
+                b[row][col] = c.at(2).at(i);
+
+            }
+
+            // Ignore pixel values corresponding to sensor positions
+            int pix_cnt = 0;
+            for (int i = 0; i < 18; i++) {
+                for (int j = 0; j < 18; j++) {
+
+                    // check ignore pixels
+                    bool ignore = false;
+                    for (unsigned int p: ignore_pix) {
+                        if (p == pix_cnt) {
+                            ignore = true;
+                            break;
+                        }
+                    }
+                    pix_cnt++;
+
+                    if (ignore) continue;
+
+                    buf[cnt] = r[i][j];
+                    cnt++;
+                    buf[cnt] = g[i][j];
+                    cnt++;
+                    buf[cnt] = b[i][j];
+                    cnt++;
+                }
+            }
+            if (cnt == 0)continue;
+            soc_vec.at(brd.get_id()).transfer(buf, cnt);
         }
     }
 
-    brd->version = info_pac.mode;
-    brd->chain = (info_pac.value >> 8) & 0xff;
-    brd->sensors = info_pac.value & 0xff;
+    for(const auto& soc : soc_vec){
+        soc.second.close();
+    }
 }
 
-void launch(zmq::context_t *ctx, serial *ser, board *brd, const char *bind_addr, const std::map<unsigned int, unsigned int> *ids){
+/**
+ * 色情報をSubscribe
+ * @param addr  bind アドレス
+ * @param brd   Board インスタンス
+ */
+void subscribe_color(const char *addr, Board *brd){
 
-    std::future<void> pub_data_th = std::async(std::launch::async, publish_data, ctx, brd, bind_addr, ids);
-#if !defined(NO_BOARD)
-    std::future<void> pico_th = std::async(std::launch::async, receive_data, ser, brd);
-#else
-    std::future<void> pico_th = std::async(std::launch::async, push_dummy, brd);
-#endif
+    // init subscriber
+    zmq::context_t ctx(2);
+    zmq::socket_t subscriber(ctx, zmq::socket_type::sub);
+    subscriber.connect(addr);
 
+    // filter message
+    char filter_string[256] = {};
+    snprintf(filter_string, 256, "BRD_COLOR %d", brd->get_id());
+
+    subscriber.set(zmq::sockopt::subscribe, filter_string);
+    std::vector<zmq::message_t> recv_msgs;
+    f_color fc(3, std::vector<uint8_t>(brd->get_sensors()));
+
+    std::cout << "ID : " << brd->get_id() << " color is connected on " << addr << std::endl;
+
+    while(true){
+        recv_msgs.clear();
+
+        zmq::recv_multipart(subscriber, std::back_inserter(recv_msgs));
+        if(recv_msgs.empty()) {
+            std::cout << "timeout" << std::endl;
+            continue;
+        }
+        if(recv_msgs.size() != 4) continue;
+
+        int bid;
+        int ret = sscanf(recv_msgs.at(0).data<char>(), "BRD_COLOR %d",
+                         &bid);
+        if(ret == EOF) continue; //fail to decode
+
+        // 受信データサイズを計算
+        unsigned long d_size_r = recv_msgs.at(1).size() / sizeof(uint8_t);
+        unsigned long d_size_g = recv_msgs.at(2).size() / sizeof(uint8_t);
+        unsigned long d_size_b = recv_msgs.at(3).size() / sizeof(uint8_t);
+
+        // データサイズをチェック
+        if(d_size_b != d_size_r || d_size_b != d_size_g){
+            std::cerr << "invalid data size (color) bid=" << brd->get_id() << std::endl;
+            continue;
+        }
+
+        // 色データをBoardインスタンスのqueueへstore （ここの処理どうにかしたい）
+        f_color c(3, std::vector<uint8_t>(18 * 18));
+        for(int i = 0; i < d_size_r; i++){
+            c.at(0).at(i) = recv_msgs.at(1).data<uint8_t>()[i];
+            c.at(1).at(i) = recv_msgs.at(2).data<uint8_t>()[i];
+            c.at(2).at(i) = recv_msgs.at(3).data<uint8_t>()[i];
+        }
+        brd->store_color(&c);
+    }
+}
+
+
+void launch(const char *brd_addr, const char *bind_addr, const char *color_addr, std::vector<Board> *brds){
+
+    // センサーデータのPublishスレッド
+    std::future<void> pub_data_th = std::async(std::launch::async, publish_data, bind_addr, brds);
+
+    // 基板データ取得　スレッド
+    Eth receive_soc(brd_addr, ETH_PORT_BASE + brds->size(), ETH_CONN_TCP, brd_master[4].sensors * brd_master[4].modes);
+    std::future<void> pico_th = std::async(std::launch::async, receive_data, &receive_soc, brds);
+
+    // 色データ送信　スレッド
+    std::future<void> send_color_th = std::async(std::launch::async, write_color, brd_addr, brds);
+
+    // 色データSubscribe スレッド群
+    std::vector<std::future<void>> sub_color_ths;
+    for(auto &brd: *brds){
+        sub_color_ths.emplace_back(std::async(std::launch::async, subscribe_color, color_addr, &brd));
+    }
+
+    // スレッド待機
     pub_data_th.wait();
     pico_th.wait();
+    send_color_th.wait();
+    for(auto &sct : sub_color_ths) {
+        sct.wait();
+    }
 }
 
-void run(const char* port, const char* bind_addr, const char* info_addr, int modes){
+
+/**
+ * 初期化など
+ * @param port          シリアルポート
+ * @param bind_addr     Analyzerノードのアドレス
+ * @param info_addr     Storageノードのアドレス
+ * @param color_addr    色情報Bindアドレス
+ */
+void run(const char* port, const char* bind_addr, const char* info_addr, const char* color_addr, int version, int chain){
 
     // print options
     printf("TM SERIAL PORT      : %s\n", port);
     printf("SENS CONNECT ADDR   : %s\n", bind_addr);
     printf("META CONNECT ADDR   : %s\n", info_addr);
-    printf("SENSING MODES  : %d\n", modes);
 
-    // init vars
-    serial ser(port, B115200);
-    board brd = {};
-    char name[256];
-    sscanf(port, "/dev/%s", name);
+    printf("SERIAL_NUM       : %s\n", port);
+    printf("CONTROLLER_VER   : %d\n", version);
+    printf("BOARD_CHAIN      : %d\n", chain);
 
-#if !defined(NO_BOARD)
-    // open serial port
-    int ret = ser.tm_open();
-    if(ret != 0)exit(-1);
+    // Storageノードから基板IDを取得
+    std::vector<unsigned int> ids{};
+    get_board_ids(info_addr, port,  chain, &ids);
 
-    printf("Waiting for board data...\n");
+    // create board instance
+    std::vector<Board> brds;
+    for(unsigned int id : ids){
+        std::cout << "BID : " << id << std::endl;
+        brds.emplace_back(id, brd_master[version].sensors, brd_master[version].modes);
+    }
 
-    // wait for board-info from serial-connection
-    get_board_info(&ser, &brd);
-    brd.modes = modes;
-    brd.serial = get_serial_num(name);
-#else
-    printf("Test Mode Enabled.\n");
-    brd.version = 4;
-    brd.chain = 2;
-    brd.modes = modes;
-    brd.sensors = 18;
-    brd.serial = "board_is_not_connected";
-#endif
+    // launch
+    launch(port, bind_addr, color_addr, &brds);
 
-    printf("SERIAL_NUM  : %s\n", brd.serial);
-    printf("BOARD_VER   : %d\n", brd.version);
-    printf("BOARD_CHAIN : %d\n", brd.chain);
-    printf("SENSORS     : %d\n", brd.sensors);
-
-    zmq::context_t ctx(1);
-
-    // get board ids
-    std::map<unsigned int, unsigned int> ids{};
-    get_board_ids(&ctx, info_addr, &brd, &ids);
-
-    launch(&ctx, &ser, &brd, bind_addr, &ids);
-
-    ser.close();
 }
 
 int main(int argc, char* argv[]){
 
     int c;
-    const char* optstring = "t:p:b:i:";
+    const char* optstring = "t:p:b:i:c:h:v:";
 
     // enable error log from getopt
     opterr = 0;
 
-    // sensing modes
-    int s_modes = 5;
     // serial port
     char* ser_p = nullptr;
     // bind address
     char* bind_addr = nullptr;
     // connect address for publishing meta-data
     char* info_addr = nullptr;
+    // connect address for subscribe color-data
+    char* color_addr = nullptr;
+
+    int chain = 0;
+    int version = 0;
 
     // get options
     while((c = getopt(argc, argv, optstring)) != -1){
@@ -304,6 +416,12 @@ int main(int argc, char* argv[]){
             bind_addr = optarg;
         }else if(c == 'i') {
             info_addr = optarg;
+        }else if(c == 'c') {
+            color_addr = optarg;
+        }else if(c == 'h') {
+            chain = atoi(optarg);
+        }else if(c == 'v') {
+            version = atoi(optarg);
         }else{
             // parse error
             printf("unknown argument error\n");
@@ -313,7 +431,7 @@ int main(int argc, char* argv[]){
 
     // check for serial port
     if(ser_p == nullptr){
-        printf("require serial port option -p");
+        printf("require port option -p");
         return -1;
     }
     // check for bind address
@@ -326,8 +444,21 @@ int main(int argc, char* argv[]){
         printf("require storage address option -i");
         return -3;
     }
+    // check for bind address
+    if(color_addr == nullptr){
+        printf("require color address option -c");
+        return -3;
+    }
+    if(version == 0){
+        printf("require board version");
+        return -1;
+    }
+    if(chain == 0){
+        printf("require chain count");
+        return -1;
+    }
 
-    run(ser_p, bind_addr, info_addr, s_modes);
+    run(ser_p, bind_addr, info_addr, color_addr, version, chain);
 
     return 0;
 }

@@ -5,29 +5,25 @@ works on linux only.
 
 ## dependencies
 
-- [libudev](https://www.freedesktop.org/software/systemd/man/libudev.html)
 - [libzmq](https://github.com/zeromq/libzmq)
 - [cppzmq](https://github.com/zeromq/cppzmq)
 
 ## options
   
-| option | description                 | example        |
-|--------|-----------------------------|----------------|
-| -t     | number of operating modes   | 5              |
-| -p     | device name                 | /dev/ttyACM0   |
-| -b     | sensor-data publish address | 127.0.0.1:6001 |
-| -i     | meta-data publish address   | 127.0.0.1:7000 |        
+| option | description                    | example              |
+|--------|--------------------------------|----------------------|
+| -p     | controller ip address          | 192.168.0.100        |
+| -b     | sensor-data publish address    | tcp://127.0.0.1:6001 |
+| -i     | storage node address           | tcp://127.0.0.1:7000 |
+| -c     | color-data subscribing address | tcp://127.0.0.1:4000 |
+| -h     | board chain count              | 2                    |
+| -v     | board version                  | 4                    |            
 
 ## zmq message format
 
-### Meta Data
-```angular2html
-BRD_INFO [Serial-Number] [version] [chain] [sensors] [modes]
-```
-
 ### Sensor Data
 ```angular2html
-BRD_DATA [Serial-Number] [chain] [chain-num] [Mode] [Sensor-Data...]
+BRD_DATA [Data Num] [Sensor-Data...]
 ```  
   
 Sensor-Data section sent as multipart message

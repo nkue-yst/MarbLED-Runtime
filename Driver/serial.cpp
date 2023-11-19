@@ -48,8 +48,7 @@ int serial::tm_open() {
 }
 
 void serial::generatePacket(tm_packet *pac) {
-    pac->s_num = packet[0];
-    pac->mode = packet[1];
+    pac->d_num = (packet[0] << 8) | packet[1];
     pac->value = (packet[2] << 8) | packet[3];
 }
 
@@ -115,4 +114,41 @@ int serial::read(std::vector<tm_packet> *pacs) {
 
 void serial::close() const {
     ::close(fd);
+}
+
+void serial::transfer(const uint8_t *color, size_t len) {
+    if(len <= 0)return;
+    uint8_t bufc[4096] = {};
+
+    int cnt = 0;
+    int i_buf = 0;
+    while (true) {
+        switch (color[cnt]) {
+            case SLIP_END:
+                bufc[i_buf] = (SLIP_ESC);
+                i_buf++;
+                bufc[i_buf] = (SLIP_ESC_END);
+                i_buf++;
+                break;
+            case SLIP_ESC:
+                bufc[i_buf] = (SLIP_ESC);
+                i_buf++;
+                bufc[i_buf] = (SLIP_ESC_ESC);
+                i_buf++;
+                break;
+            default:
+                bufc[i_buf] = (color[cnt]);
+                i_buf++;
+                break;
+        }
+        cnt++;
+        if (cnt >= len) {
+            bufc[i_buf] = (SLIP_END);
+            i_buf++;
+            break;
+        }
+    }
+
+    ::write(fd, bufc, i_buf);
+
 }

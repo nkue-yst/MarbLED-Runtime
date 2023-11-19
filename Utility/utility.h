@@ -31,7 +31,7 @@ typedef struct {
  * @param chain_num Chain番号
  * @return          取得したBoardID
  */
-int get_board_id(const char *addr, const char *serial, unsigned int chain_num) {
+inline int get_board_id(const char *addr, const char *serial, unsigned int chain_num) {
 
     // prepare socket
     zmq::context_t ctx(1);
@@ -66,7 +66,7 @@ int get_board_id(const char *addr, const char *serial, unsigned int chain_num) {
  * @param boards    コンテナのリスト
  * @return  取得した基板数
  */
-int get_connected_boards(const char *addr, std::vector<Container> *boards) {
+inline int get_connected_boards(const char *addr, std::vector<Container> *boards) {
 
     // prepare socket
     zmq::context_t ctx(1);
@@ -95,6 +95,31 @@ int get_connected_boards(const char *addr, std::vector<Container> *boards) {
     }
 
     return recv_msgs.size();
+
+}
+
+
+/**
+ * レイアウトをストレージに保存
+ * @param addr      Storageノードのアドレス (e.g. tcp://127.0.0.1:8001)
+ * @param bid       Board ID
+ * @param x         Layout X
+ * @param y         Layout Y
+ */
+inline void store_layout(const char *addr, unsigned int bid, int x, int y){
+    // prepare socket
+    zmq::context_t ctx(1);
+    zmq::socket_t req(ctx, zmq::socket_type::req);
+    req.connect(addr);
+
+    // build a message requesting a connected board
+    char request[] = "STORAGE STR_LAYOUT";
+    char layout[128];
+    snprintf(layout, 128, "%d %d %d", bid, x, y);
+
+    // send request
+    req.send(zmq::buffer(request), zmq::send_flags::sndmore);
+    req.send(zmq::buffer(layout), zmq::send_flags::none);
 
 }
 

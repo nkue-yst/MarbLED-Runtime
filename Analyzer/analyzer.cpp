@@ -12,34 +12,11 @@
 
 #include "frame.h"
 #include "mapper.h"
+#include "utility.h"
 
 
-void get_connected_boards(const char *addr, std::vector<board> *brds) {
-    zmq::context_t ctx(1);
-    zmq::socket_t req(ctx, zmq::socket_type::req);
-    req.connect(addr);
-
-    // build a message requesting a connected board
-    char request[128] = "STORAGE REQ_LAYOUT";
-
-    // send request
-    req.send(zmq::buffer(request), zmq::send_flags::none);
-
-    // wait for replies
-    std::vector<zmq::message_t> recv_msgs;
-    zmq::recv_multipart(req, std::back_inserter(recv_msgs));
-
-    // erase header ( STORAGE REPLY )
-    if(!recv_msgs.empty()) recv_msgs.erase(recv_msgs.begin());
-
-    req.close();
-
-    for(auto & recv_msg : recv_msgs) {
-        board c = *recv_msg.data<board>();
-        brds->push_back(c);
-    }
-
-}
+bool running = false;
+void run(const char *addr, const char *storage_addr, const char *com_addr);
 
 void update_frames(const uint16_t bid, const uint16_t mode, const uint16_t *data, const unsigned long len, std::vector<frame> *frames){
     for(auto & frame : *frames){
@@ -58,7 +35,7 @@ void subscribe_data(std::vector<frame> *frames, const char *addr){
 
     std::cout << "bind on " << addr << std::endl;
 
-    while(true){
+    while(running){
         recv_msgs.clear();
 
         zmq::recv_multipart(subscriber, std::back_inserter(recv_msgs));
@@ -68,11 +45,9 @@ void subscribe_data(std::vector<frame> *frames, const char *addr){
         }
         if(recv_msgs.size() != 2) continue;
 
-        int bid, chain, c_num, mode;
-        int ret = sscanf(recv_msgs.at(0).data<char>(), "BRD_DATA %d %d %d %d",
+        int bid, mode;
+        int ret = sscanf(recv_msgs.at(0).data<char>(), "BRD_DATA %d %d",
                          &bid,
-                         &chain,
-                         &c_num,
                          &mode);
         if(ret == EOF) continue; //fail to decode
 
@@ -81,28 +56,100 @@ void subscribe_data(std::vector<frame> *frames, const char *addr){
     }
 }
 
+void command_handling(std::vector<frame> *frames, const char *addr){
+    zmq::context_t ctx(1);
+    zmq::socket_t subscriber(ctx, zmq::socket_type::rep);
+    subscriber.bind(addr);
 
-void update_sens_img(Mapper *me){
-    while(true){
-        me->update();
+    std::vector<zmq::message_t> recv_msgs;
+
+    while(running){
+        recv_msgs.clear();
+
+        zmq::recv_multipart(subscriber, std::back_inserter(recv_msgs));
+        if(recv_msgs.empty()) {
+            std::cout << "timeout" << std::endl;
+            continue;
+        }
+
+        char command[256]{};
+        int ret = sscanf(recv_msgs.at(0).data<char>(),
+                         "ANALYZER %s",
+                         command);
+        if(ret == EOF) continue; // fail to decode
+
+        // exec commands
+        if(strcmp(command, "CAL_UPPER") == 0) {
+
+            for(auto &frm : *frames){
+                frm.set_upper();
+            }
+
+        }else if(strcmp(command, "CAL_LOWER") == 0){
+
+            for(auto &frm : *frames){
+                frm.set_lower();
+            }
+
+        }else if(strcmp(command, "RELOAD") == 0){
+            running = false;
+
+        }
+
+        subscriber.send(zmq::buffer("ANALYZER ACK"), zmq::send_flags::none);
+
     }
 }
 
 
-void launch(std::vector<frame> *frms, const char *addr, Mapper *mapper){
-    std::future<void> recv_meta = std::async(std::launch::async, subscribe_data, frms, addr);
-    std::future<void> img_update = std::async(std::launch::async, update_sens_img, mapper);
-    recv_meta.wait();
-    img_update.wait();
+void update(Mapper *me){
+    while(running){
+        me->update();
+
+        cv::Mat tmp;
+        me->get_img(tmp);
+        cv::resize(tmp, tmp, cv::Size(), 4, 4, cv::INTER_CUBIC);
+
+        cv::Mat img8bit;
+        tmp.convertTo(img8bit, CV_8UC1, 255.0 / (UINT16_MAX));
+
+        cv::Mat binary;
+        cv::threshold(img8bit, binary, 0, 255, cv::THRESH_OTSU);
+
+        std::vector<std::vector<cv::Point>> contours;
+        cv::findContours(binary, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+
+        cv::Mat result;
+        cv::cvtColor(img8bit, result, cv::COLOR_GRAY2BGR);
+
+        cv::drawContours(result, contours, -1, cv::Scalar(0, 255, 0), 1);
+
+        cv::resize(result, result, cv::Size(400, 400), 0, 0, cv::INTER_NEAREST);
+        cv::imshow("test", result);
+        cv::waitKey(10);
+    }
 }
 
 
-void run(const char *addr, const char *storage_addr){
+void launch(std::vector<frame> *frms, const char *addr, const char *cm_addr, Mapper *mapper){
+    running = true;
+
+    std::future<void> recv_meta = std::async(std::launch::async, subscribe_data, frms, addr);
+    std::future<void> img_update = std::async(std::launch::async, update, mapper);
+    std::future<void> handing = std::async(std::launch::async, command_handling, frms, cm_addr);
+    recv_meta.wait();
+    img_update.wait();
+    handing.wait();
+
+}
+
+
+void run(const char *addr, const char *storage_addr, const char *com_addr){
 
     std::cout << "Getting board data..." << std::endl;
 
     // get board layout from storage
-    std::vector<board> brds;
+    std::vector<Container> brds;
     get_connected_boards(storage_addr, &brds);
 
     // check board count
@@ -122,18 +169,20 @@ void run(const char *addr, const char *storage_addr){
 
     Mapper mapper(&frms);
 
-    launch(&frms, addr, &mapper);
+    launch(&frms, addr, com_addr, &mapper);
+
 }
 
 int main(int argc, char* argv[]){
 
     int c;
-    const char* optstring = "d:b:";
+    const char* optstring = "d:b:i:";
 
     // enable error log from getopt
     opterr = 0;
 
     // bind address
+    char* com_addr = nullptr;
     char* bind_addr = nullptr;
     char* storage_addr = nullptr;
 
@@ -143,6 +192,8 @@ int main(int argc, char* argv[]){
             storage_addr = optarg;
         }else if(c == 'b'){
             bind_addr = optarg;
+        }else if(c == 'i') {
+            com_addr = optarg;
         }else{
             // parse error
             printf("unknown argument error\n");
@@ -160,8 +211,12 @@ int main(int argc, char* argv[]){
         printf("require bind address option");
         return -2;
     }
-
-    run(bind_addr, storage_addr);
+    // check for com address
+    if(com_addr == nullptr){
+        printf("require command address option");
+        return -2;
+    }
+    run(bind_addr, storage_addr, com_addr);
 
     return 0;
 }
