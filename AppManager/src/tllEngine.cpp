@@ -49,13 +49,13 @@ namespace tll
         printLog("Destroy Engine instance");
     }
 
-    void tllEngine::init(uint16_t width, uint16_t height, std::string LED_driver)
+    void tllEngine::init(uint16_t width, uint16_t height)
     {
         if (this->initialized_)
             return;
 
         TLL_ENGINE(PanelManager)->init(width, height);
-        TLL_ENGINE(SerialManager)->init(LED_driver);
+        TLL_ENGINE(SerialManager)->init();
         TLL_ENGINE(TextRenderer)->init();
         TLL_ENGINE(EventHandler)->init();
 

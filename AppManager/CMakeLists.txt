@@ -14,10 +14,13 @@ file(GLOB TLL_SRC ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
 add_library(TLL_LIB SHARED ${TLL_SRC})
 target_include_directories(TLL_LIB PUBLIC include)
 target_link_libraries(TLL_LIB ${OpenCV_LIBRARIES} cppzmq oscpack TUIO)
+if (NOT ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+    target_link_libraries(TLL_LIB stdc++fs)
+endif()
 
 ### Setup base application ###
-add_executable(TLL_AppManager ${CMAKE_CURRENT_SOURCE_DIR}/src/AppManager.cpp)
-target_link_libraries(TLL_AppManager ${CMAKE_DL_LIBS} TLL_LIB TUIO stdc++fs)
+add_executable(MarbLED-Runtime ${CMAKE_CURRENT_SOURCE_DIR}/src/AppManager.cpp)
+target_link_libraries(MarbLED-Runtime ${CMAKE_DL_LIBS} TLL_LIB TUIO)
 
 ### Setup thirdparty libraries ###
 target_include_directories(TLL_LIB PUBLIC
@@ -27,7 +30,7 @@ target_include_directories(TLL_LIB PUBLIC
     ${CMAKE_SOURCE_DIR}/thirdparty/libzmq/include
     ${CMAKE_SOURCE_DIR}/thirdparty/cppzmq
 )
-target_include_directories(TLL_AppManager PUBLIC
+target_include_directories(MarbLED-Runtime PUBLIC
     ${OpenCV_INCLUDE_DIRS}
     ${CMAKE_SOURCE_DIR}/thirdparty/TUIO11_CPP/oscpack
     ${CMAKE_SOURCE_DIR}/thirdparty/TUIO11_CPP/TUIO

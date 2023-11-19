@@ -81,7 +81,7 @@ inline int get_connected_boards(const char *addr, std::vector<Container> *boards
 
     // wait for replies
     std::vector<zmq::message_t> recv_msgs;
-    zmq::recv_multipart(req, std::back_inserter(recv_msgs));
+    zmq::recv_multipart(req, std::back_inserter(recv_msgs), zmq::recv_flags::dontwait);
     if(recv_msgs.empty()) return MESSAGE_ERROR;
 
     req.close();

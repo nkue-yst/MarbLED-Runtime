@@ -29,7 +29,7 @@ namespace tll
         tllEngine();
         ~tllEngine();
 
-        void init(uint16_t width, uint16_t height, std::string LED_driver);
+        void init(uint16_t width, uint16_t height);
         void run();
         void quit();
 
@@ -49,6 +49,9 @@ namespace tll
             return std::get<tllComponent<T>>(tllEngine::pInstance_->components_).get();
         }
         #define TLL_ENGINE(COMPONENT) tllEngine::getComponent<I##COMPONENT>()
+
+        // シミュレートモードかどうか
+        bool simulate_mode = false;
 
     private:
         std::tuple<
