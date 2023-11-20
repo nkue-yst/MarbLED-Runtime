@@ -79,7 +79,7 @@ namespace tll
     void runOscReceiveThread(class AppManager* app_manager)
     {
         OscHandler osc_handler(app_manager);
-        UdpListeningReceiveSocket osc_sock(IpEndpointName(IpEndpointName::ANY_ADDRESS, 44101), &osc_handler);
+        UdpListeningReceiveSocket osc_sock(IpEndpointName(IpEndpointName::ANY_ADDRESS, 9000), &osc_handler);
         osc_sock.Run();
     }
 
