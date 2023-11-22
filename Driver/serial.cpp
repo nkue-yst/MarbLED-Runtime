@@ -9,6 +9,8 @@
 #include <csignal>
 #include <vector>
 
+#include <unistd.h>
+
 #include "serial.h"
 
 serial::serial(const char *file, int baudRate) {
