@@ -113,8 +113,20 @@ void update(Mapper *me){
         cv::Mat img8bit;
         tmp.convertTo(img8bit, CV_8UC1, 255.0 / (UINT16_MAX));
 
+        for(int i = 0; i < img8bit.rows; i++){
+            auto *m_ptr = img8bit.ptr<uint8_t>(i);
+            for(int j = 0; j < img8bit.cols; j++){
+                if(m_ptr[j] < 10) m_ptr[j] = 0;
+            }
+        }
+
         cv::Mat binary;
         cv::threshold(img8bit, binary, 0, 255, cv::THRESH_OTSU);
+
+        cv::Mat LabelImg;
+        cv::Mat stats;
+        cv::Mat centroids;
+        int nLab = cv::connectedComponentsWithStats(binary, LabelImg, stats, centroids);
 
         std::vector<std::vector<cv::Point>> contours;
         cv::findContours(binary, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
@@ -123,9 +135,22 @@ void update(Mapper *me){
         cv::cvtColor(img8bit, result, cv::COLOR_GRAY2BGR);
 
         cv::drawContours(result, contours, -1, cv::Scalar(0, 255, 0), 1);
+        for (int i = 1; i < nLab; ++i) {
+            double *param = centroids.ptr<double>(i);
+            int x = static_cast<int>(param[0]);
+            int y = static_cast<int>(param[1]);
+
+            cv::circle(result,cv::Point(x, y), 1, cv::Scalar(0, 0, 255), -1);
+        }
 
         cv::resize(result, result, cv::Size(400, 400), 0, 0, cv::INTER_NEAREST);
+
+        cv::Mat cm;
+        cv::applyColorMap(img8bit, cm, cv::COLORMAP_JET);
+        cv::resize(cm, cm, cv::Size(400, 400), 0, 0, cv::INTER_NEAREST);
+
         cv::imshow("test", result);
+        cv::imshow("value", cm);
         cv::waitKey(10);
     }
 }
