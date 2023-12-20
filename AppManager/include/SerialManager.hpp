@@ -23,19 +23,12 @@ namespace tll
         static ISerialManager* create();
 
         // 通信管理クラスを初期化
-        virtual void init(std::string LED_driver) = 0;
+        virtual void init() = 0;
 
         // 色情報を送信する
         virtual void sendColorData() = 0;
 
         bool send_ready = true;
-
-    protected:
-        /// System mode (0:LED and Simulation, 1:Only Simulation)
-        int system_mode;
-
-        /// LED driver name
-        std::string led_driver_;
     };
 
     /* 通信関連クラス */
@@ -46,7 +39,7 @@ namespace tll
         ~SerialManager() noexcept override;
 
         // 通信管理クラスを初期化
-        void init(std::string LED_driver) override;
+        void init() override;
 
         // 色情報を送信する
         void sendColorData() override;

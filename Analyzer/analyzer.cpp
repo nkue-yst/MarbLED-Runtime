@@ -10,6 +10,8 @@
 #include <thread>
 #include <queue>
 
+#include <getopt.h>
+
 #include "frame.h"
 #include "mapper.h"
 #include "utility.h"

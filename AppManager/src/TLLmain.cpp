@@ -28,10 +28,10 @@
 
 namespace tll
 {
-    void init(uint16_t width, uint16_t height, std::string LED_driver)
+    void init(uint16_t width, uint16_t height)
     {
         // エンジン，コンポーネントを初期化する
-        tllEngine::get()->init(width, height, LED_driver);
+        tllEngine::get()->init(width, height);
 
         std::cout << std::endl;
     }
@@ -62,7 +62,6 @@ namespace tll
     void drawPixel(uint16_t x, uint16_t y, Color color)
     {
         TLL_ENGINE(PanelManager)->drawPixel(x, y, color);
-        //TLL_ENGINE(SerialManager)->sendColorData();
     }
 
     void drawPixels(std::vector<uint16_t> x, std::vector<uint16_t> y, Color color)
@@ -71,37 +70,31 @@ namespace tll
         {
             TLL_ENGINE(PanelManager)->drawPixel(x.at(i), y.at(i), color);
         }
-        //TLL_ENGINE(SerialManager)->sendColorData();
     }
 
     void drawRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, Color color)
     {
         TLL_ENGINE(PanelManager)->drawRect(x, y, w, h, color);
-        //TLL_ENGINE(SerialManager)->sendColorData();
     }
 
     void drawLine(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, Color color)
     {
         TLL_ENGINE(PanelManager)->drawLine(x1, y1, x2, y2, color);
-        //TLL_ENGINE(SerialManager)->sendColorData();
     }
 
     void drawCircle(uint16_t x, uint16_t y, uint16_t rad, Color color)
     {
         TLL_ENGINE(PanelManager)->drawCircle(x, y, rad, color);
-        //TLL_ENGINE(SerialManager)->sendColorData();
     }
 
     void print(std::string str, uint16_t x, uint16_t y, uint16_t size, Color color)
     {
         TLL_ENGINE(TextRenderer)->drawText(str, color, x, y, size);
-        //TLL_ENGINE(SerialManager)->sendColorData();
     }
 
     void clear()
     {
         TLL_ENGINE(PanelManager)->clear();
-        //TLL_ENGINE(SerialManager)->sendColorData();
     }
 
     tll::Image* loadImage(const char* file)
