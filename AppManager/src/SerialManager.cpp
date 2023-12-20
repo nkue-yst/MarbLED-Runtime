@@ -45,28 +45,37 @@ namespace tll
                 // 基板情報のリストを取得する
                 std::vector<Container> board_list;
 
-                if (tllEngine::get()->simulate_mode || get_connected_boards("tcp://127.0.0.1:8001", &board_list) < 0)
+                zmq::socket_t req(ctx, zmq::socket_type::req);
+                if (tllEngine::get()->simulate_mode || get_connected_boards(ctx, req, "tcp://127.0.0.1:8001", &board_list) < 0)
                 {
                     tllEngine::get()->simulate_mode = true;
                     printLog("Start with simulation mode.");
 
                     // Add virtual boards information
                     Container board{};
-                    board.id = 0;
-                    board.layout_x = 0;
-                    board.layout_y = 0;
-                    board_list.push_back(board);
+                    for (int32_t y = 0; y < TLL_ENGINE(PanelManager)->getHeight(); y += led_height)
+                    {
+                        for (int32_t x = 0; x < TLL_ENGINE(PanelManager)->getWidth(); x += led_width)
+                        {
+                            board.id = board_list.size();
+                            board.layout_x = x;
+                            board.layout_y = y;
+                            board_list.push_back(board);
+                        }
+                    }
 
-                    board.id = 1;
-                    board.layout_x = led_width * 1;
-                    board.layout_y = 0;
-                    board_list.push_back(board);
-
-                    board.id = 2;
-                    board.layout_x = led_width * 2;
-                    board.layout_y = 0;
-                    board_list.push_back(board);
+                    // Debug print for board list
+                    // std::cout << "Board list:" << std::endl;
+                    // for (auto board : board_list)
+                    // {
+                    //     std::cout <<
+                    //         "ID: " << std::setw(3) << board.id <<
+                    //         ", x: " << std::setw(3) << board.layout_x <<
+                    //         ", y: " << std::setw(3) << board.layout_y
+                    //     << std::endl;
+                    // }
                 }
+                req.close();
 
                 //////////////////////////////
                 ///// 色情報の送信を開始 /////
