@@ -90,11 +90,11 @@ namespace tll
             /* キー入力による即時アプリ切り替え処理 */
             else if (ch == '1')
             {
-                OscHandler::sendMessageWithString("/tll/switch", "home", "127.0.0.1", 44101);
+                OscHandler::sendMessageWithString("/tll/switch", "MarbleTower", "127.0.0.1", 44101);
             }
             else if (ch == '2')
             {
-                OscHandler::sendMessageWithString("/tll/switch", "TouchPoints", "127.0.0.1", 44101);
+                OscHandler::sendMessageWithString("/tll/switch", "MusicVisualizer", "127.0.0.1", 44101);
             }
             else if (ch == '3')
             {
@@ -102,23 +102,19 @@ namespace tll
             }
             else if (ch == '4')
             {
-                OscHandler::sendMessageWithString("/tll/switch", "MultiTouchLine", "127.0.0.1", 44101);
+                OscHandler::sendMessageWithString("/tll/switch", "Theremin", "127.0.0.1", 44101);
             }
             else if (ch == '5')
             {
-                OscHandler::sendMessageWithString("/tll/switch", "CockroachShooting", "127.0.0.1", 44101);
             }
             else if (ch == '6')
             {
-                OscHandler::sendMessageWithString("/tll/switch", "Theremin", "127.0.0.1", 44101);
             }
             else if (ch == '7')
             {
-                OscHandler::sendMessageWithString("/tll/switch", "MusicVisualizer", "127.0.0.1", 44101);
             }
             else if (ch == '8')
             {
-                OscHandler::sendMessageWithString("/tll/switch", "ADIR01P_Light", "127.0.0.1", 44101);
             }
         }
     }
