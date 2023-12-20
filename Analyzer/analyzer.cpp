@@ -14,6 +14,10 @@
 #include "mapper.h"
 #include "utility.h"
 
+#include "osc/OscOutboundPacketStream.h"
+#include "ip/IpEndpointName.h"
+#include "ip/UdpSocket.h"
+
 
 bool running = false;
 void run(const char *addr, const char *storage_addr, const char *com_addr);
@@ -103,6 +107,8 @@ void command_handling(std::vector<frame> *frames, const char *addr){
 
 
 void update(Mapper *me){
+    UdpTransmitSocket sock(IpEndpointName("192.168.1.225", 30000));
+
     while(running){
         me->update();
 
@@ -147,12 +153,14 @@ void update(Mapper *me){
         cv::cvtColor(img8bit, result, cv::COLOR_GRAY2BGR);
 
         cv::drawContours(result, contours, -1, cv::Scalar(0, 255, 0), 1);
+        int x, y;
         for (int i = 1; i < nLab; ++i) {
             double *param = centroids.ptr<double>(i);
-            int x = static_cast<int>(param[0]);
-            int y = static_cast<int>(param[1]);
+            x = static_cast<int>(param[0]);
+            y = static_cast<int>(param[1]);
 
             cv::circle(result,cv::Point(x, y), 1, cv::Scalar(0, 0, 255), -1);
+            break;
         }
 
         cv::resize(result, result, cv::Size(400, 400), 0, 0, cv::INTER_NEAREST);
@@ -164,6 +172,17 @@ void update(Mapper *me){
         cv::imshow("test", result);
         cv::imshow("value", cm);
         cv::waitKey(10);
+
+
+        char buffer[1024] = {};
+        osc::OutboundPacketStream p(buffer, 1024);
+        p << osc::BeginBundleImmediate
+        << osc::BeginMessage("/touch")
+        << static_cast<int32_t>(x)
+        << static_cast<int32_t>(y)
+        << osc::EndMessage
+        << osc::EndBundle;
+        sock.Send(p.Data(), p.Size());
     }
 }
 
@@ -202,6 +221,7 @@ void run(const char *addr, const char *storage_addr, const char *com_addr){
     for(auto brd : brds){
         std::cout << "BID : " << brd.id << std::endl;
         frms.emplace_back(brd);
+        break;
     }
 
     Mapper mapper(&frms);
