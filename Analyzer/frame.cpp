@@ -172,14 +172,18 @@ void frame::led2sens_coordinate(const cv::Point2i *src, cv::Point2i *dst) const 
 }
 
 void frame::calc_gain(){
+    std::cout << "[ cal length ] bid : " << brd_data.id << std::endl;
     for(int mode = 0; mode < buf.size(); mode++){
+        std::cout << "-- mode : " << mode << " --" << std::endl;
         for(int s = 0; s < buf.at(mode).size(); s++){
             if(cal_upper[mode][s] > cal_lower[mode][s]){
                 cal_gain.at(mode).at(s) = (float)UINT16_MAX / (float)(cal_upper[mode][s] - cal_lower[mode][s]);
             }else{
                 cal_gain.at(mode).at(s) = 0.0;
             }
+            std::cout << cal_upper[mode][s] - cal_lower[mode][s] << " ";
         }
+        std::cout << std::endl;
     }
 }
 

@@ -108,17 +108,29 @@ void update(Mapper *me){
 
         cv::Mat tmp;
         me->get_img(tmp);
-        cv::resize(tmp, tmp, cv::Size(), 4, 4, cv::INTER_CUBIC);
 
+        // convert from 16bit value to 8bit value
         cv::Mat img8bit;
         tmp.convertTo(img8bit, CV_8UC1, 255.0 / (UINT16_MAX));
 
+        // noise reduction
         for(int i = 0; i < img8bit.rows; i++){
             auto *m_ptr = img8bit.ptr<uint8_t>(i);
             for(int j = 0; j < img8bit.cols; j++){
                 if(m_ptr[j] < 10) m_ptr[j] = 0;
             }
         }
+
+        // rotate
+        cv::Point2f center = cv::Point2f((img8bit.cols / 2  -1),(img8bit.rows / 2 -1));//図形の中心
+        double degree = 45.0;  // 回転角度
+        double scale = 1; //大きさの定義
+
+        cv::Mat change = cv::getRotationMatrix2D(center, degree, scale); //回転&拡大縮小
+        cv::warpAffine(img8bit, img8bit, change, img8bit.size(), cv::INTER_CUBIC,cv::BORDER_CONSTANT,cv::Scalar(0, 0, 0)); //画像の変換(アフィン変換)
+
+        // interpolation
+        cv::resize(img8bit, img8bit, cv::Size(), 4, 4, cv::INTER_CUBIC);
 
         cv::Mat binary;
         cv::threshold(img8bit, binary, 0, 255, cv::THRESH_OTSU);
