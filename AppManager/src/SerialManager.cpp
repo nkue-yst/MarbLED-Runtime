@@ -45,8 +45,7 @@ namespace tll
                 // 基板情報のリストを取得する
                 std::vector<Container> board_list;
 
-                zmq::socket_t req(ctx, zmq::socket_type::req);
-                if (tllEngine::get()->simulate_mode || get_connected_boards(ctx, req, "tcp://127.0.0.1:8001", &board_list) < 0)
+                if (tllEngine::get()->simulate_mode || get_connected_boards("tcp://127.0.0.1:8001", &board_list) < 0)
                 {
                     tllEngine::get()->simulate_mode = true;
                     printLog("Start with simulation mode.");
@@ -75,7 +74,6 @@ namespace tll
                     //     << std::endl;
                     // }
                 }
-                req.close();
 
                 //////////////////////////////
                 ///// 色情報の送信を開始 /////
