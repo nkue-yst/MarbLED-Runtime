@@ -140,14 +140,17 @@ void update(Mapper *me){
         // interpolation
         cv::resize(img8bit, img8bit, cv::Size(), 4, 4, cv::INTER_CUBIC);
 
+        // thresholding
         cv::Mat binary;
         cv::threshold(img8bit, binary, 0, 255, cv::THRESH_OTSU);
 
+        // labeling
         cv::Mat LabelImg;
         cv::Mat stats;
         cv::Mat centroids;
         int nLab = cv::connectedComponentsWithStats(binary, LabelImg, stats, centroids);
 
+        // find contours
         std::vector<std::vector<cv::Point>> contours;
         cv::findContours(binary, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
 
@@ -162,7 +165,6 @@ void update(Mapper *me){
             y = static_cast<int>(param[1]);
 
             cv::circle(result,cv::Point(x, y), 1, cv::Scalar(0, 0, 255), -1);
-            break;
         }
 
         cv::resize(result, result, cv::Size(400, 400), 0, 0, cv::INTER_NEAREST);

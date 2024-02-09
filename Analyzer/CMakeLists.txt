@@ -5,7 +5,9 @@ set(CMAKE_CXX_STANDARD 14)
 
 find_package(OpenCV REQUIRED)
 
-add_executable(analyzer analyzer.cpp frame.cpp mapper.cpp mapper.h)
+add_executable(analyzer analyzer.cpp frame.cpp mapper.cpp mapper.h
+        tracker.cpp
+        tracker.h)
 target_link_libraries(analyzer ${OpenCV_LIBRARIES} cppzmq oscpack)
 
 target_include_directories(analyzer PUBLIC

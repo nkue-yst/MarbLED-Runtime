@@ -5,6 +5,7 @@
 #ifndef MARBLED_RUNTIME_UTILITY_H
 #define MARBLED_RUNTIME_UTILITY_H
 
+#include <thread>
 #include "zmq.hpp"
 #include "zmq_addon.hpp"
 
@@ -78,6 +79,8 @@ inline int get_connected_boards(const char *addr, std::vector<Container> *boards
 
     // send request
     req.send(zmq::buffer(request), zmq::send_flags::none);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     // wait for replies
     std::vector<zmq::message_t> recv_msgs;
