@@ -15,6 +15,7 @@
 #include "frame.h"
 #include "mapper.h"
 #include "utility.h"
+#include "tracker.h"
 
 #include "osc/OscOutboundPacketStream.h"
 #include "ip/IpEndpointName.h"
@@ -110,6 +111,7 @@ void command_handling(std::vector<frame> *frames, const char *addr){
 
 void update(Mapper *me){
     UdpTransmitSocket sock(IpEndpointName("192.168.1.225", 30000));
+    Tracker track(10, 10, 5, 5);
 
     while(running){
         me->update();
@@ -125,17 +127,17 @@ void update(Mapper *me){
         for(int i = 0; i < img8bit.rows; i++){
             auto *m_ptr = img8bit.ptr<uint8_t>(i);
             for(int j = 0; j < img8bit.cols; j++){
-                if(m_ptr[j] < 10) m_ptr[j] = 0;
+                if(m_ptr[j] < 20) m_ptr[j] = 0;
             }
         }
 
         // rotate
-        cv::Point2f center = cv::Point2f((img8bit.cols / 2  -1),(img8bit.rows / 2 -1));//図形の中心
+        /*cv::Point2f center = cv::Point2f((img8bit.cols / 2  -1),(img8bit.rows / 2 -1));//図形の中心
         double degree = 45.0;  // 回転角度
         double scale = 1; //大きさの定義
 
         cv::Mat change = cv::getRotationMatrix2D(center, degree, scale); //回転&拡大縮小
-        cv::warpAffine(img8bit, img8bit, change, img8bit.size(), cv::INTER_CUBIC,cv::BORDER_CONSTANT,cv::Scalar(0, 0, 0)); //画像の変換(アフィン変換)
+        cv::warpAffine(img8bit, img8bit, change, img8bit.size(), cv::INTER_CUBIC,cv::BORDER_CONSTANT,cv::Scalar(0, 0, 0)); //画像の変換(アフィン変換)*/
 
         // interpolation
         cv::resize(img8bit, img8bit, cv::Size(), 4, 4, cv::INTER_CUBIC);
@@ -157,6 +159,7 @@ void update(Mapper *me){
         cv::Mat result;
         cv::cvtColor(img8bit, result, cv::COLOR_GRAY2BGR);
 
+        // update tracker
         cv::drawContours(result, contours, -1, cv::Scalar(0, 255, 0), 1);
         int x, y;
         for (int i = 1; i < nLab; ++i) {
@@ -164,7 +167,28 @@ void update(Mapper *me){
             x = static_cast<int>(param[0]);
             y = static_cast<int>(param[1]);
 
-            cv::circle(result,cv::Point(x, y), 1, cv::Scalar(0, 0, 255), -1);
+            Object obj = {0, (float)x, (float)y, {}, 0};
+            int id = track.update(&obj);
+            if(id < 0) continue;
+        }
+        track.tick();
+
+        // draw object point
+        for(auto obj : *track.get_objs()){
+            cv::circle(result,cv::Point((int)obj.second.px, (int)obj.second.py), 1, cv::Scalar(obj.first * 20, obj.first * 20, 255), -1);
+
+            //std::cout << " ( " << obj.first << ", " << obj.second.px << ", " << obj.second.py << " ), ";
+        }
+        //std::cout << std::endl;
+
+        // translate
+        for(auto obj : *track.get_objs()){
+            float sx = obj.second.px -12;
+            float sy = obj.second.py;
+            float rx = (sx * cos(M_PI / 4 * -1)) - (sy * sin(M_PI / 4 * -1));
+            float ry = (sx * sin(M_PI / 4 * -1)) + (sy * cos(M_PI / 4 * -1));
+            cv::circle(result,cv::Point((int)rx, (int)ry), 1, cv::Scalar(255, 0, 0), -1);
+            break;
         }
 
         cv::resize(result, result, cv::Size(400, 400), 0, 0, cv::INTER_NEAREST);
@@ -225,7 +249,6 @@ void run(const char *addr, const char *storage_addr, const char *com_addr){
     for(auto brd : brds){
         std::cout << "BID : " << brd.id << std::endl;
         frms.emplace_back(brd);
-        break;
     }
 
     Mapper mapper(&frms);
