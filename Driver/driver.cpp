@@ -247,9 +247,9 @@ void write_color(const char *brd_addr, std::vector<Board> *brds){
 
                     if (ignore) continue;
 
-                    buf[cnt] = r[i][j];
-                    cnt++;
                     buf[cnt] = g[i][j];
+                    cnt++;
+                    buf[cnt] = r[i][j];
                     cnt++;
                     buf[cnt] = b[i][j];
                     cnt++;
