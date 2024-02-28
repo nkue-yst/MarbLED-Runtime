@@ -5,7 +5,6 @@
 #ifndef MARBLED_RUNTIME_UTILITY_H
 #define MARBLED_RUNTIME_UTILITY_H
 
-#include <thread>
 #include "zmq.hpp"
 #include "zmq_addon.hpp"
 
@@ -80,17 +79,21 @@ inline int get_connected_boards(const char *addr, std::vector<Container> *boards
     // send request
     req.send(zmq::buffer(request), zmq::send_flags::none);
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
     // wait for replies
     std::vector<zmq::message_t> recv_msgs;
-    zmq::recv_multipart(req, std::back_inserter(recv_msgs), zmq::recv_flags::dontwait);
-    if(recv_msgs.empty()) return MESSAGE_ERROR;
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    auto result = zmq::recv_multipart(req, std::back_inserter(recv_msgs), zmq::recv_flags::dontwait);
+
+    if(recv_msgs.empty()) {
+        std::cout << "No reply from storage node." << std::endl;
+        return MESSAGE_ERROR;
+    }
 
     req.close();
 
     // erase header ( STORAGE REPLY )
-    recv_msgs.erase(recv_msgs.begin());
+    if (!recv_msgs.empty())
+        recv_msgs.erase(recv_msgs.begin());
 
     for(auto & recv_msg : recv_msgs) {
         Container c = *recv_msg.data<Container>();
@@ -98,9 +101,48 @@ inline int get_connected_boards(const char *addr, std::vector<Container> *boards
     }
 
     return recv_msgs.size();
-
 }
 
+/**
+ * 現在接続中の基板情報を取得
+ * @param ctx       ZeroMQのコンテキスト
+ * @param req       request送信用のZeroMQソケット
+ * @param addr      Storageノードのアドレス (e.g. tcp://127.0.0.1:8001)
+ * @param boards    コンテナのリスト
+ * @return  取得した基板数
+ */
+inline int get_connected_boards(zmq::context_t& ctx, zmq::socket_t& req, const char *addr, std::vector<Container> *boards) {
+    req.connect(addr);
+
+    // build a message requesting a connected board
+    char request[] = "STORAGE REQ_LAYOUT";
+
+    // send request
+    req.send(zmq::buffer(request), zmq::send_flags::none);
+
+    // wait for replies
+    std::vector<zmq::message_t> recv_msgs;
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    auto result = zmq::recv_multipart(req, std::back_inserter(recv_msgs), zmq::recv_flags::dontwait);
+
+    if(recv_msgs.empty()) {
+        std::cout << "No reply from storage node." << std::endl;
+        return MESSAGE_ERROR;
+    }
+
+    req.close();
+
+    // erase header ( STORAGE REPLY )
+    if (!recv_msgs.empty())
+        recv_msgs.erase(recv_msgs.begin());
+
+    for(auto & recv_msg : recv_msgs) {
+        Container c = *recv_msg.data<Container>();
+        boards->push_back(c);
+    }
+
+    return recv_msgs.size();
+}
 
 /**
  * レイアウトをストレージに保存

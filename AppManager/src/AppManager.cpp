@@ -62,7 +62,7 @@ namespace tll
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
         this->loadApps();
-	    this->switchApp("Theremin");
+	    this->switchApp("MarbleTower");
 
         while (loop())
         {
@@ -110,20 +110,22 @@ namespace tll
         uint32_t app_num = 0;
 
         std::cout << std::endl <<  "[Loaded applications]" << std::endl;
+        std::cout << "|" << std::endl;
 
         auto dirs = std::filesystem::directory_iterator(std::filesystem::path("./app"));
         for (auto& dir : dirs)
         {
             std::string path = dir.path().string();
-
-            // アプリファイルを検索し、ロードする
-            if (path.find(extention.c_str()) != std::string::npos)
+            
+            // 拡張子が".mled"のみ走査する
+            if (path.find(".mled") != std::string::npos)
             {
-                std::string app_file_name = dir.path().stem().string();        // 拡張子を削除
-                std::string app_name = app_file_name.substr(3);                // 先頭の"lib"を削除
-                this->app_list[app_name] = dlopen(path.c_str(), RTLD_LAZY);    // DLLを読み込む
+                std::string app_name = dir.path().stem().string();
 
-                std::cout << " - " << app_name << std::endl;
+                path = path + "/lib" + app_name + extention;
+                this->app_list[app_name] = dlopen(path.c_str(), RTLD_LAZY);
+
+                std::cout << "|-- " << app_name << std::endl;
 
                 app_num++;    // 読み込んだアプリ数をカウント
             }
@@ -132,7 +134,6 @@ namespace tll
         
         return app_num;
     }
-
 }
 
 int main(int argc, char** argv)
