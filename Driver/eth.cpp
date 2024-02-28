@@ -11,7 +11,7 @@ Eth::Eth(const char *addr, uint16_t port, int mode, int ex_len){
     sock_addr.sin_addr.s_addr = inet_addr(addr);
 
     eth_mode = (mode == ETH_CONN_TCP) ? SOCK_STREAM : SOCK_DGRAM;
-    expected_len = ex_len * 2;  // 16bit quantization
+    expected_len = ex_len;  // 16bit quantization
 }
 
 int Eth::tm_open(){

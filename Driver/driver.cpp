@@ -35,10 +35,10 @@ bool exit_flg = false;
  * @param ids           idリスト
  * @return
  */
-void get_board_ids(const char *conn_addr, const char *serial, unsigned int chain, std::vector<unsigned int> *ids){
+void get_board_ids(const char *conn_addr, const char *serial, unsigned int chain, std::vector<unsigned int> *ids, unsigned int version, unsigned int modes){
 
     for(int i = 0; i < chain; i++){
-        ids->push_back( get_board_id(conn_addr, serial, i) );
+        ids->push_back( get_board_id(conn_addr, serial, i, version, modes) );
     }
 
 }
@@ -124,7 +124,6 @@ void receive_data(Bucket *ser, std::vector<Board> *brds){
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
             continue;  // データなければリトライ
         }
-
         for(tm_packet pac : pacs){
             int brd = pac.d_num / data_per_board;
             int sensor = pac.d_num % sensors;
@@ -211,7 +210,7 @@ void write_color(const char *brd_addr, std::vector<Board> *brds){
             // Boardインスタンスから色データをpop
             int ret = brd.pop_color_values(&c);
             if (ret < 0) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
                 continue;  // データなければリトライ
             }
 
@@ -332,7 +331,7 @@ void launch(const char *brd_addr, const char *bind_addr, const char *color_addr,
     std::future<void> pub_data_th = std::async(std::launch::async, publish_data, bind_addr, brds);
 
     // 基板データ取得　スレッド
-    Eth receive_soc(brd_addr, ETH_PORT_BASE + brds->size(), ETH_CONN_TCP, brd_master[4].sensors * brd_master[4].modes);
+    Eth receive_soc(brd_addr, ETH_PORT_BASE + brds->size(), ETH_CONN_TCP, brd_master[4].sensors * brd_master[4].modes * (int)brds->size());
     std::future<void> pico_th = std::async(std::launch::async, receive_data, &receive_soc, brds);
 
     // 色データ送信　スレッド
@@ -374,7 +373,7 @@ void run(const char* port, const char* bind_addr, const char* info_addr, const c
 
     // Storageノードから基板IDを取得
     std::vector<unsigned int> ids{};
-    get_board_ids(info_addr, port,  chain, &ids);
+    get_board_ids(info_addr, port,  chain, &ids, (unsigned int)version, (unsigned int)brd_master[version].modes);
 
     // create board instance
     std::vector<Board> brds;

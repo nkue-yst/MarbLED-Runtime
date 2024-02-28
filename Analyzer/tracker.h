@@ -14,6 +14,8 @@ typedef struct object{
     uint8_t id;
     float px;
     float py;
+    int32_t t_px;
+    int32_t t_py;
     uint8_t contour[32];
     uint8_t life_time;
     bool candidate;
@@ -25,6 +27,7 @@ class Tracker {
 private:
     std::map<int, Object> objs;
     std::map<int, object> prev_objs;
+    std::vector<int> last_eliminated;
     int distance_th = 15;
     int eliminate_tick = 4;
     int raise_tick = 4;
@@ -41,7 +44,7 @@ public:
     Tracker(int dis, int el_tick, int raise, int max);
     int update(Object *obj);
     void tick();
-    std::map<int, Object> * get_objs();
+    void get_objs(std::map<int, Object> *objs_, std::vector<int> *eliminated);
 
 };
 

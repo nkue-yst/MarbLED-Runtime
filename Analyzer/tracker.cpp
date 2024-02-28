@@ -47,6 +47,8 @@ void Tracker::eliminate() {
         if(obj.second.life_time > eliminate_tick) eliminate_list.emplace_back(obj.first);
     }
 
+    last_eliminated = eliminate_list;
+
     for(auto id : eliminate_list){
         objs.erase(id);
         prev_objs.erase(id);
@@ -108,7 +110,7 @@ void Tracker::tick() {
 }
 
 // get smoothed objects
-std::map<int, Object> * Tracker::get_objs(){
+void Tracker::get_objs(std::map<int, Object> *objs_, std::vector<int> *eliminated){
     float gain = 0.1;
 
     for(auto &obj : prev_objs){
@@ -120,5 +122,6 @@ std::map<int, Object> * Tracker::get_objs(){
         obj.second.py = obj.second.py + mv_y;
     }
 
-    return &prev_objs;
+    *objs_ = prev_objs;
+    *eliminated = last_eliminated;
 }

@@ -21,6 +21,14 @@
 #include "ip/IpEndpointName.h"
 #include "ip/UdpSocket.h"
 
+cv::Scalar touch_color_arr[5] = {
+        cv::Scalar(255, 0, 0),
+        cv::Scalar(0, 255, 255),
+        cv::Scalar(0, 0, 255),
+        cv::Scalar(255, 255, 0),
+        cv::Scalar(255, 0, 255)
+};
+
 
 bool running = false;
 void run(const char *addr, const char *storage_addr, const char *com_addr);
@@ -110,8 +118,8 @@ void command_handling(std::vector<frame> *frames, const char *addr){
 
 
 void update(Mapper *me){
-    UdpTransmitSocket sock(IpEndpointName("192.168.1.225", 30000));
-    Tracker track(10, 10, 5, 5);
+    UdpTransmitSocket sock(IpEndpointName("192.168.0.200", 9000));
+    Tracker track(10, 2, 10, 5);
 
     while(running){
         me->update();
@@ -124,12 +132,12 @@ void update(Mapper *me){
         tmp.convertTo(img8bit, CV_8UC1, 255.0 / (UINT16_MAX));
 
         // noise reduction
-        for(int i = 0; i < img8bit.rows; i++){
+        /*for(int i = 0; i < img8bit.rows; i++){
             auto *m_ptr = img8bit.ptr<uint8_t>(i);
             for(int j = 0; j < img8bit.cols; j++){
-                if(m_ptr[j] < 20) m_ptr[j] = 0;
+                if(m_ptr[j] < 10) m_ptr[j] = 0;
             }
-        }
+        }*/
 
         // rotate
         /*cv::Point2f center = cv::Point2f((img8bit.cols / 2  -1),(img8bit.rows / 2 -1));//図形の中心
@@ -161,11 +169,10 @@ void update(Mapper *me){
 
         // update tracker
         cv::drawContours(result, contours, -1, cv::Scalar(0, 255, 0), 1);
-        int x, y;
         for (int i = 1; i < nLab; ++i) {
             double *param = centroids.ptr<double>(i);
-            x = static_cast<int>(param[0]);
-            y = static_cast<int>(param[1]);
+            int x = static_cast<int>(param[0]);
+            int y = static_cast<int>(param[1]);
 
             Object obj = {0, (float)x, (float)y, {}, 0};
             int id = track.update(&obj);
@@ -174,23 +181,48 @@ void update(Mapper *me){
         track.tick();
 
         // draw object point
-        for(auto obj : *track.get_objs()){
-            cv::circle(result,cv::Point((int)obj.second.px, (int)obj.second.py), 1, cv::Scalar(obj.first * 20, obj.first * 20, 255), -1);
+        std::map<int, Object> objs;
+        std::vector<int> eliminated;
+        track.get_objs(&objs, &eliminated);
+
+        for(auto obj : objs){
+            cv::circle(result,cv::Point((int)obj.second.px, (int)obj.second.py), 1, touch_color_arr[obj.first], -1);
 
             //std::cout << " ( " << obj.first << ", " << obj.second.px << ", " << obj.second.py << " ), ";
         }
         //std::cout << std::endl;
 
         // translate
-        for(auto obj : *track.get_objs()){
+        for(auto obj : objs){
             float sx = obj.second.px -12;
             float sy = obj.second.py;
             float rx = (sx * cos(M_PI / 4 * -1)) - (sy * sin(M_PI / 4 * -1));
             float ry = (sx * sin(M_PI / 4 * -1)) + (sy * cos(M_PI / 4 * -1));
-            cv::circle(result,cv::Point((int)rx, (int)ry), 1, cv::Scalar(255, 0, 0), -1);
-            break;
+            obj.second.t_px = (int)rx;
+            obj.second.t_py = (int)ry;
         }
 
+        // publish osc
+        char buffer[1024] = {};
+        osc::OutboundPacketStream p(buffer, 1024);
+
+        p << osc::BeginBundleImmediate;
+        for(auto obj : objs){
+            p << osc::BeginMessage((std::string("/touch/") + std::to_string(obj.first) + std::string("/point")).c_str())
+              << static_cast<int32_t>(obj.second.t_px)
+              << static_cast<int32_t>(obj.second.t_py)
+              << osc::EndMessage;
+        }
+        for(auto elobj : eliminated){
+            p << osc::BeginMessage((std::string("/touch/") + std::to_string(elobj) + std::string("/delete")).c_str())
+              << static_cast<int32_t>(-1)
+              << static_cast<int32_t>(-1)
+              << osc::EndMessage;
+        }
+        p << osc::EndBundle;
+        sock.Send(p.Data(), p.Size());
+
+        // preview
         cv::resize(result, result, cv::Size(400, 400), 0, 0, cv::INTER_NEAREST);
 
         cv::Mat cm;
@@ -201,16 +233,6 @@ void update(Mapper *me){
         cv::imshow("value", cm);
         cv::waitKey(10);
 
-
-        char buffer[1024] = {};
-        osc::OutboundPacketStream p(buffer, 1024);
-        p << osc::BeginBundleImmediate
-        << osc::BeginMessage("/touch")
-        << static_cast<int32_t>(x)
-        << static_cast<int32_t>(y)
-        << osc::EndMessage
-        << osc::EndBundle;
-        sock.Send(p.Data(), p.Size());
     }
 }
 

@@ -161,13 +161,26 @@ void frame::get_mat_calibrated(cv::OutputArray dst){
 void frame::led2sens_coordinate(const cv::Point2i *src, cv::Point2i *dst) const {
     switch(brd_data.version){
         case 4:
-            double sx = (double)src->x / 18 * 5;
-            double sy = (double)src->y / 18 * 5;
+            /*double sx = (double)src->x / 18.0 * 5.0 - 2.0;
+            double sy = (double)src->y / 18.0 * 5.0 + 1.0;
             double x = (sx * cos(M_PI / 4)) - (sy * sin(M_PI / 4));
             double y = (sx * sin(M_PI / 4)) + (sy * cos(M_PI / 4));
-            dst->x = floor(x);
+            dst->x = floor(x) + 5;
             dst->y = floor(y);
-            break;
+            break;*/
+            if(src->x == 18 && src->y == 18){
+                dst->x = 3;
+                dst->y = 6;
+            }else if(src->x == 0 && src->y == 18){
+                dst->x = 0;
+                dst->y = 3;
+            }else if(src->x == 18 && src->y == 0){
+                dst->x = 6;
+                dst->y = 3;
+            }else if(src->x == 0 && src->y == 0){
+                dst->x = 3;
+                dst->y = 0;
+            }
     }
 }
 
@@ -189,6 +202,11 @@ void frame::calc_gain(){
 
 void frame::set_lower() {
     std::copy(buf.begin(), buf.end(), cal_lower.begin());
+    for(auto &d : cal_lower){
+        for(auto &a : d){
+            a += FRAME_CAL_OFFSET;
+        }
+    }
     calc_gain();
 }
 

@@ -14,6 +14,8 @@
 
 #include "resources/board_template.h"
 
+#define FRAME_CAL_OFFSET    20
+
 typedef std::vector<uint16_t> s_data;
 
 class frame {
