@@ -54,10 +54,10 @@ namespace tll
                     Container board{};
                     for (int32_t y = 0; y < TLL_ENGINE(PanelManager)->getHeight(); y += led_height)
                     {
-                        for (int32_t x = 0; x < TLL_ENGINE(PanelManager)->getWidth(); x += led_width)
+                        for (int32_t x = TLL_ENGINE(PanelManager)->getWidth(); x > 0; x -= led_width)
                         {
-                            board.id = board_list.size();
-                            board.layout_x = x;
+                            board.id = board_list.size() + 1;
+                            board.layout_x = x - led_width;
                             board.layout_y = y;
                             board_list.push_back(board);
                         }

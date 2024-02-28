@@ -62,7 +62,7 @@ namespace tll
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
         this->loadApps();
-	    this->switchApp("MarbleTower");
+	    this->switchApp("Scan");
 
         while (loop())
         {
