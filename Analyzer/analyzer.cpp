@@ -118,7 +118,7 @@ void command_handling(std::vector<frame> *frames, const char *addr){
 
 
 void update(Mapper *me){
-    UdpTransmitSocket sock(IpEndpointName("192.168.0.200", 9000));
+    UdpTransmitSocket sock(IpEndpointName("127.0.0.1", 9000));
     Tracker track(10, 2, 10, 5);
 
     while(running){
@@ -138,14 +138,6 @@ void update(Mapper *me){
                 if(m_ptr[j] < 10) m_ptr[j] = 0;
             }
         }*/
-
-        // rotate
-        /*cv::Point2f center = cv::Point2f((img8bit.cols / 2  -1),(img8bit.rows / 2 -1));//図形の中心
-        double degree = 45.0;  // 回転角度
-        double scale = 1; //大きさの定義
-
-        cv::Mat change = cv::getRotationMatrix2D(center, degree, scale); //回転&拡大縮小
-        cv::warpAffine(img8bit, img8bit, change, img8bit.size(), cv::INTER_CUBIC,cv::BORDER_CONSTANT,cv::Scalar(0, 0, 0)); //画像の変換(アフィン変換)*/
 
         // interpolation
         cv::resize(img8bit, img8bit, cv::Size(), 4, 4, cv::INTER_CUBIC);
@@ -193,13 +185,13 @@ void update(Mapper *me){
         //std::cout << std::endl;
 
         // translate
-        for(auto obj : objs){
-            float sx = obj.second.px -12;
+        for(auto &obj : objs){
+            float sx = obj.second.px -24;
             float sy = obj.second.py;
             float rx = (sx * cos(M_PI / 4 * -1)) - (sy * sin(M_PI / 4 * -1));
             float ry = (sx * sin(M_PI / 4 * -1)) + (sy * cos(M_PI / 4 * -1));
-            obj.second.t_px = (int)rx;
-            obj.second.t_py = (int)ry;
+            obj.second.t_px = (int)(rx * 1.2);
+            obj.second.t_py = (int)(ry * 1.2);
         }
 
         // publish osc
@@ -212,6 +204,7 @@ void update(Mapper *me){
               << static_cast<int32_t>(obj.second.t_px)
               << static_cast<int32_t>(obj.second.t_py)
               << osc::EndMessage;
+            //printf("ID : %d, (%d, %d)\n", obj.first, obj.second.t_px, obj.second.t_py);
         }
         for(auto elobj : eliminated){
             p << osc::BeginMessage((std::string("/touch/") + std::to_string(elobj) + std::string("/delete")).c_str())
@@ -224,6 +217,14 @@ void update(Mapper *me){
 
         // preview
         cv::resize(result, result, cv::Size(400, 400), 0, 0, cv::INTER_NEAREST);
+
+        // rotate
+        cv::Point2f center = cv::Point2f((result.cols / 2),(result.cols / 2));//図形の中心
+        double degree = 45.0;  // 回転角度
+        double scale = 1.2; //大きさの定義
+
+        cv::Mat change = cv::getRotationMatrix2D(center, degree, scale); //回転&拡大縮小
+        cv::warpAffine(result, result, change, result.size(), cv::INTER_CUBIC,cv::BORDER_CONSTANT,cv::Scalar(0, 0, 0)); //画像の変換(アフィン変換)
 
         cv::Mat cm;
         cv::applyColorMap(img8bit, cm, cv::COLORMAP_JET);

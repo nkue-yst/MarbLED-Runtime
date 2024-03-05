@@ -111,7 +111,7 @@ void Tracker::tick() {
 
 // get smoothed objects
 void Tracker::get_objs(std::map<int, Object> *objs_, std::vector<int> *eliminated){
-    float gain = 0.1;
+    float gain = 0.2;
 
     for(auto &obj : prev_objs){
         float diff_x = objs.at(obj.first).px - obj.second.px;
